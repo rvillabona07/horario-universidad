@@ -13,7 +13,8 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  const titulo = (payload.data && payload.data.title) || "Recordatorio";
-  const cuerpo = (payload.data && payload.data.body) || "";
-  self.registration.showNotification(titulo, { body: cuerpo });
+  // Si llega sin datos (una repetición vacía del mismo aviso), no mostramos nada.
+  if (!payload.data || !payload.data.title) return;
+
+  self.registration.showNotification(payload.data.title, { body: payload.data.body || "" });
 });
