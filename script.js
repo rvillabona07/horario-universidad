@@ -390,7 +390,6 @@ onAuthStateChanged(auth, async (user) => {
     usuarioInfo.hidden = false;
     const miApodo = await obtenerApodo(user.uid);
     usuarioEmailEl.textContent = miApodo || "Sin apodo";
-    miApodoEl.textContent = miApodo || "Sin apodo";
     formAuth.reset();
     limpiarErrorAuth();
     const datos = await cargarDatosDesdeFirestore(user.uid);
@@ -469,13 +468,11 @@ async function obtenerApodo(uid) {
 
 const formApodo = document.getElementById("form-apodo");
 const apodoInput = document.getElementById("apodo-input");
-const miApodoEl = document.getElementById("mi-apodo");
-const btnCambiarApodo = document.getElementById("btn-cambiar-apodo");
 const modalApodo = document.getElementById("modal-apodo");
 const btnCerrarApodo = document.getElementById("btn-cerrar-apodo");
 
-btnCambiarApodo.addEventListener("click", () => {
-  apodoInput.value = miApodoEl.textContent === "Sin apodo" ? "" : miApodoEl.textContent;
+usuarioEmailEl.addEventListener("click", () => {
+  apodoInput.value = usuarioEmailEl.textContent === "Sin apodo" ? "" : usuarioEmailEl.textContent;
   modalApodo.hidden = false;
 });
 
@@ -494,7 +491,6 @@ formApodo.addEventListener("submit", async (evento) => {
 
   await setDoc(doc(db, "perfiles", usuarioActual.uid), { apodo });
   usuarioEmailEl.textContent = apodo;
-  miApodoEl.textContent = apodo;
   modalApodo.hidden = true;
 });
 

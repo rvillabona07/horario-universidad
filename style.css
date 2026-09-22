@@ -55,6 +55,21 @@ header h1 {
   font-size: 0.85rem;
 }
 
+#usuario-email {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#usuario-email:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
 .btn-icono {
   background: rgba(255, 255, 255, 0.2);
   color: white;
