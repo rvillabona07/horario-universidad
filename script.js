@@ -388,7 +388,9 @@ onAuthStateChanged(auth, async (user) => {
     authPanel.hidden = true;
     appMain.hidden = false;
     usuarioInfo.hidden = false;
-    usuarioEmailEl.textContent = user.email;
+    const miApodo = await obtenerApodo(user.uid);
+    usuarioEmailEl.textContent = miApodo || "Sin apodo";
+    apodoInput.value = miApodo || "";
     formAuth.reset();
     limpiarErrorAuth();
     const datos = await cargarDatosDesdeFirestore(user.uid);
@@ -456,6 +458,28 @@ async function asegurarCodigoPropio() {
   throw new Error("No se pudo generar un código único.");
 }
 
+async function obtenerApodo(uid) {
+  try {
+    const snapshot = await getDoc(doc(db, "perfiles", uid));
+    return snapshot.exists() ? snapshot.data().apodo : null;
+  } catch {
+    return null;
+  }
+}
+
+const formApodo = document.getElementById("form-apodo");
+const apodoInput = document.getElementById("apodo-input");
+
+formApodo.addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  const apodo = apodoInput.value.trim();
+  if (!apodo) return;
+
+  await setDoc(doc(db, "perfiles", usuarioActual.uid), { apodo });
+  usuarioEmailEl.textContent = apodo;
+  alert("¡Apodo guardado!");
+});
+
 const miCodigoEl = document.getElementById("mi-codigo");
 const btnCopiarCodigo = document.getElementById("btn-copiar-codigo");
 const formAgregarAmigo = document.getElementById("form-agregar-amigo");
@@ -498,7 +522,6 @@ formAgregarAmigo.addEventListener("submit", async (evento) => {
 
     await addDoc(collection(db, "solicitudesAmistad"), {
       de: usuarioActual.uid,
-      deEmail: usuarioActual.email,
       para: uidDestino,
       estado: "pendiente",
       creada: Date.now(),
@@ -514,9 +537,7 @@ formAgregarAmigo.addEventListener("submit", async (evento) => {
 });
 
 async function responderSolicitud(id, estado) {
-  const datos = { estado };
-  if (estado === "aceptada") datos.paraEmail = usuarioActual.email;
-  await updateDoc(doc(db, "solicitudesAmistad", id), datos);
+  await updateDoc(doc(db, "solicitudesAmistad", id), { estado });
   renderAmigos();
 }
 
@@ -565,13 +586,14 @@ async function renderAmigos() {
     vacio.textContent = "No tienes solicitudes pendientes.";
     listaSolicitudes.appendChild(vacio);
   } else {
-    pendientesRecibidas.forEach((docSnap) => {
+    for (const docSnap of pendientesRecibidas) {
       const solicitud = docSnap.data();
+      const apodo = await obtenerApodo(solicitud.de);
       const li = document.createElement("li");
 
       const info = document.createElement("span");
       info.className = "info-clase";
-      info.textContent = solicitud.deEmail || "Alguien";
+      info.textContent = apodo || "Alguien";
 
       const acciones = document.createElement("span");
       acciones.className = "acciones-clase";
@@ -591,17 +613,17 @@ async function renderAmigos() {
       li.appendChild(info);
       li.appendChild(acciones);
       listaSolicitudes.appendChild(li);
-    });
+    }
   }
 
   listaAmigos.innerHTML = "";
   const amigosAceptados = [
     ...snapshotDestino.docs
       .filter((d) => d.data().estado === "aceptada")
-      .map((d) => ({ uid: d.data().de, email: d.data().deEmail })),
+      .map((d) => ({ uid: d.data().de })),
     ...snapshotOrigen.docs
       .filter((d) => d.data().estado === "aceptada")
-      .map((d) => ({ uid: d.data().para, email: d.data().paraEmail })),
+      .map((d) => ({ uid: d.data().para })),
   ];
 
   if (amigosAceptados.length === 0) {
@@ -614,11 +636,12 @@ async function renderAmigos() {
 
   for (const amigo of amigosAceptados) {
     const estado = await obtenerEstadoAmigo(amigo.uid);
+    const apodo = await obtenerApodo(amigo.uid);
     const li = document.createElement("li");
 
     const info = document.createElement("span");
     info.className = "info-clase";
-    info.textContent = amigo.email || "Amigo";
+    info.textContent = apodo || "Amigo sin apodo";
 
     li.appendChild(info);
     li.insertAdjacentHTML("beforeend", badgeEstado(estado));

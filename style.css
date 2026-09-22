@@ -306,6 +306,19 @@ header h1 {
   color: white;
 }
 
+#apodo-input {
+  flex: 1;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--color-borde);
+  border-radius: 8px;
+  font-size: 16px;
+}
+
+#btn-guardar-apodo {
+  background: var(--gradiente-llamativo);
+  color: white;
+}
+
 .panel-amigos-codigo,
 .panel-amigos-agregar {
   margin-bottom: 1.5rem;
