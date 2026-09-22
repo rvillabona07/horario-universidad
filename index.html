@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mi Horario</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>📅 Mi Horario de Clases</h1>
+    <div class="header-derecha">
+      <button id="btn-colores" type="button" class="btn-icono" title="Personalizar colores">🎨</button>
+      <button id="btn-notificaciones" type="button" class="btn-icono" title="Activar notificaciones">🔔</button>
+      <div id="usuario-info" class="usuario-info" hidden>
+        <span id="usuario-email"></span>
+        <button id="btn-logout" type="button">Cerrar sesión</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="modal-colores" class="modal-overlay" hidden>
+    <div class="modal-colores">
+      <button type="button" id="btn-cerrar-colores" class="btn-cerrar-modal" title="Cerrar">×</button>
+      <h2>Elige un color</h2>
+      <p class="modal-colores-subtexto">También cambia el color de tus clases en el calendario</p>
+      <div id="swatches-colores" class="swatches-colores"></div>
+    </div>
+  </div>
+
+  <div id="auth-panel" class="auth-panel">
+    <div id="auth-card" class="auth-card auth-card-login">
+      <h2 id="auth-titulo">Inicia sesión</h2>
+      <p id="auth-subtexto" class="auth-subtexto">Para guardar tu horario y verlo en todos tus dispositivos</p>
+      <form id="form-auth">
+        <label>
+          Correo
+          <input type="email" id="auth-email" required />
+        </label>
+        <label>
+          Contraseña
+          <input type="password" id="auth-password" required minlength="6" />
+        </label>
+        <p id="auth-error" class="auth-error" hidden></p>
+        <button type="submit" id="btn-auth-principal">Iniciar sesión</button>
+      </form>
+      <p class="auth-toggle">
+        <span id="auth-toggle-texto">¿No tienes cuenta?</span>
+        <button type="button" id="btn-cambiar-modo">Crea una aquí</button>
+      </p>
+    </div>
+  </div>
+
+  <main id="app-main" hidden>
+    <div class="tabs-principales">
+      <button type="button" id="tab-horario" class="tab-boton tab-activo">📅 Horario</button>
+      <button type="button" id="tab-amigos" class="tab-boton">👥 Amigos</button>
+    </div>
+
+    <div id="vista-horario">
+    <div class="columna-formularios">
+    <details class="panel-formulario" id="detalle-clase">
+      <summary id="form-titulo">Agregar clase</summary>
+      <form id="form-clase">
+        <label>
+          Materia
+          <input type="text" id="materia" required placeholder="Ej. Cálculo I" />
+        </label>
+
+        <fieldset id="dias-fieldset" class="dias-fieldset">
+          <legend>Días (elige uno o varios)</legend>
+          <label class="dia-check"><input type="checkbox" name="dia" value="Lunes" /> Lunes</label>
+          <label class="dia-check"><input type="checkbox" name="dia" value="Martes" /> Martes</label>
+          <label class="dia-check"><input type="checkbox" name="dia" value="Miércoles" /> Miércoles</label>
+          <label class="dia-check"><input type="checkbox" name="dia" value="Jueves" /> Jueves</label>
+          <label class="dia-check"><input type="checkbox" name="dia" value="Viernes" /> Viernes</label>
+          <label class="dia-check"><input type="checkbox" name="dia" value="Sábado" /> Sábado</label>
+          <label class="dia-check"><input type="checkbox" name="dia" value="Domingo" /> Domingo</label>
+        </fieldset>
+
+        <label>
+          Hora inicio
+          <input type="time" id="hora-inicio" min="07:00" max="22:00" required />
+        </label>
+
+        <label>
+          Hora fin
+          <input type="time" id="hora-fin" min="07:00" max="22:00" required />
+        </label>
+
+        <label>
+          Aula (opcional)
+          <input type="text" id="aula" placeholder="Ej. B-204" />
+        </label>
+
+        <label>
+          Profesor (opcional)
+          <input type="text" id="profesor" placeholder="Ej. Prof. García" />
+        </label>
+
+        <div class="form-botones">
+          <button type="submit" id="btn-guardar">Agregar clase</button>
+          <button type="button" id="btn-cancelar" hidden>Cancelar edición</button>
+        </div>
+      </form>
+    </details>
+
+    <details class="panel-formulario panel-pendientes" id="detalle-pendiente">
+      <summary>Agregar actividad</summary>
+      <form id="form-pendiente">
+        <label>
+          Título
+          <input type="text" id="pendiente-titulo" required placeholder="Ej. Parcial de Cálculo" />
+        </label>
+
+        <label>
+          Tipo
+          <select id="pendiente-tipo">
+            <option value="Parcial">Parcial/Examen</option>
+            <option value="Taller">Taller</option>
+            <option value="Tarea">Tarea</option>
+            <option value="Otro">Otro</option>
+          </select>
+        </label>
+
+        <label>
+          Materia relacionada
+          <select id="pendiente-materia">
+            <option value="">Ninguna / General</option>
+          </select>
+        </label>
+
+        <label>
+          Fecha
+          <input type="date" id="pendiente-fecha" required />
+        </label>
+
+        <button type="submit" id="btn-guardar-pendiente">Agregar actividad</button>
+      </form>
+    </details>
+    </div>
+
+    <section class="panel-horario">
+      <p id="rango-semana" class="rango-semana"></p>
+
+      <div id="recordatorios-semana" class="recordatorios-semana"></div>
+
+      <div class="horario-scroll">
+        <div id="grid-horario" class="grid-horario"></div>
+      </div>
+
+      <div id="agenda-movil" class="agenda-movil"></div>
+
+      <div class="lista-clases">
+        <h2>Mis clases</h2>
+        <ul id="lista-clases" class="lista-items"></ul>
+      </div>
+
+      <div class="lista-clases">
+        <h2>Mis actividades</h2>
+        <ul id="lista-pendientes" class="lista-items"></ul>
+      </div>
+    </section>
+    </div>
+
+    <div id="vista-amigos" hidden>
+      <section class="panel-formulario panel-amigos-codigo">
+        <h2>Tu código para agregar amigos</h2>
+        <p class="modal-colores-subtexto">Compártelo (por WhatsApp, etc.) para que te agreguen</p>
+        <div class="codigo-caja">
+          <span id="mi-codigo">------</span>
+          <button type="button" id="btn-copiar-codigo">Copiar</button>
+        </div>
+      </section>
+
+      <section class="panel-formulario panel-amigos-agregar">
+        <h2>Agregar un amigo</h2>
+        <form id="form-agregar-amigo">
+          <label>
+            Código de tu amigo
+            <input type="text" id="codigo-amigo-input" placeholder="Ej. AB12CD" required maxlength="6" />
+          </label>
+          <p id="amigo-error" class="auth-error" hidden></p>
+          <button type="submit" id="btn-enviar-solicitud">Enviar solicitud</button>
+        </form>
+      </section>
+
+      <section class="panel-formulario">
+        <h2>Solicitudes recibidas</h2>
+        <ul id="lista-solicitudes" class="lista-items"></ul>
+      </section>
+
+      <section class="panel-formulario">
+        <h2>Mis amigos</h2>
+        <ul id="lista-amigos" class="lista-items"></ul>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="script.js"></script>
+</body>
+</html>
