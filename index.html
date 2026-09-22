@@ -28,6 +28,22 @@
     </div>
   </div>
 
+  <div id="modal-apodo" class="modal-overlay" hidden>
+    <div class="modal-colores">
+      <button type="button" id="btn-cerrar-apodo" class="btn-cerrar-modal" title="Cerrar">×</button>
+      <h2>Tu apodo</h2>
+      <p class="modal-colores-subtexto">Así te van a ver tus amigos (nunca se muestra tu correo)</p>
+      <form id="form-apodo">
+        <div class="codigo-caja">
+          <input type="text" id="apodo-input" placeholder="Ej. Robert" maxlength="20" required />
+        </div>
+        <div class="form-botones">
+          <button type="submit" id="btn-guardar-apodo">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="auth-panel" class="auth-panel">
     <div id="auth-card" class="auth-card auth-card-login">
       <h2 id="auth-titulo">Inicia sesión</h2>
@@ -167,12 +183,10 @@
       <section class="panel-formulario panel-amigos-codigo">
         <h2>Tu apodo</h2>
         <p class="modal-colores-subtexto">Así te van a ver tus amigos (nunca se muestra tu correo)</p>
-        <form id="form-apodo">
-          <div class="codigo-caja">
-            <input type="text" id="apodo-input" placeholder="Ej. Robert" maxlength="20" required />
-            <button type="submit" id="btn-guardar-apodo">Guardar</button>
-          </div>
-        </form>
+        <div class="codigo-caja">
+          <span id="mi-apodo">Sin apodo</span>
+          <button type="button" id="btn-cambiar-apodo">Cambiar</button>
+        </div>
       </section>
 
       <section class="panel-formulario panel-amigos-codigo">

@@ -317,6 +317,21 @@ header h1 {
 #btn-guardar-apodo {
   background: var(--gradiente-llamativo);
   color: white;
+  width: 100%;
+}
+
+#mi-apodo {
+  flex: 1;
+  background: #f1e9ff;
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+#btn-cambiar-apodo {
+  background: var(--gradiente-llamativo);
+  color: white;
 }
 
 .panel-amigos-codigo,
@@ -326,6 +341,7 @@ header h1 {
 
 #vista-amigos {
   max-width: 640px;
+  margin: 0 auto;
   padding: 1.5rem;
 }
 
