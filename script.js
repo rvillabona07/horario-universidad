@@ -1115,6 +1115,24 @@ async function renderCuentas() {
   if (!listaMeDeben.children.length) mensajeVacio(listaMeDeben, "Nadie te debe nada por ahora.");
 }
 
+// Servidor de avisos instantáneos (carpeta horario-avisos, en Cloudflare).
+// Si falla, el script de GitHub manda el aviso en su siguiente revisión.
+const URL_AVISOS = "https://horario-avisos.horario-avisos.workers.dev/avisar-cuenta";
+
+async function avisarAlInstante(idCuenta) {
+  if (!URL_AVISOS) return;
+  try {
+    const token = await usuarioActual.getIdToken();
+    await fetch(URL_AVISOS, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ idCuenta }),
+    });
+  } catch (error) {
+    console.error("Aviso instantáneo falló (llegará en la próxima revisión):", error);
+  }
+}
+
 formCuenta.addEventListener("submit", async (evento) => {
   evento.preventDefault();
   cuentaError.hidden = true;
@@ -1128,7 +1146,7 @@ formCuenta.addEventListener("submit", async (evento) => {
 
   btnCrearCuenta.disabled = true;
   try {
-    await addDoc(collection(db, "cuentas"), {
+    const nuevaCuenta = await addDoc(collection(db, "cuentas"), {
       creador: usuarioActual.uid,
       descripcion: cuentaDescripcion.value.trim(),
       total: division.total,
@@ -1139,10 +1157,11 @@ formCuenta.addEventListener("submit", async (evento) => {
       notificado: false,
       creada: Date.now(),
     });
+    avisarAlInstante(nuevaCuenta.id);
     formCuenta.reset();
     cuentaAmigosEl.querySelectorAll("input").forEach((c) => (c.checked = false));
     cuentaResumen.hidden = true;
-    alert(`¡Listo! Cada uno te debe ${pesos(division.porPersona)}. En unos minutos les llega el aviso.`);
+    alert(`¡Listo! Cada uno te debe ${pesos(division.porPersona)}. Ya les llega el aviso.`);
     renderCuentas();
   } catch (error) {
     console.error(error);
