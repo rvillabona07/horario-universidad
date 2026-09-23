@@ -17,6 +17,8 @@ import {
   query,
   where,
   getDocs,
+  arrayUnion,
+  arrayRemove,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getMessaging,
@@ -314,7 +316,18 @@ async function cargarDatosDesdeFirestore(uid) {
 
 async function guardarDatos() {
   if (!usuarioActual) return;
+  publicarHorarioCompartido();
   await setDoc(doc(db, "horarios", usuarioActual.uid), { clases, pendientes }, { merge: true });
+}
+
+// Copia de solo las clases que pueden leer los amigos que elegiste
+// (campo "permitidos"). Las actividades y el token de notificaciones
+// se quedan en "horarios", que es privado.
+function publicarHorarioCompartido() {
+  if (!usuarioActual) return;
+  setDoc(doc(db, "horariosCompartidos", usuarioActual.uid), { clases }, { merge: true }).catch(
+    (error) => console.error("No se pudo publicar el horario compartido:", error)
+  );
 }
 
 function mostrarErrorAuth(mensaje) {
@@ -396,6 +409,7 @@ onAuthStateChanged(auth, async (user) => {
     clases = datos.clases;
     pendientes = datos.pendientes;
     render();
+    publicarHorarioCompartido();
   } else {
     appMain.hidden = true;
     authPanel.hidden = false;
@@ -648,34 +662,129 @@ async function renderAmigos() {
     return;
   }
 
+  const misPermitidos = await obtenerMisPermitidos();
+
   for (const amigo of amigosAceptados) {
-    const estado = await obtenerEstadoAmigo(amigo.uid);
-    const apodo = await obtenerApodo(amigo.uid);
+    const [estado, apodo, clasesAmigo] = await Promise.all([
+      obtenerEstadoAmigo(amigo.uid),
+      obtenerApodo(amigo.uid),
+      obtenerHorarioDeAmigo(amigo.uid),
+    ]);
+    const nombre = apodo || "Amigo sin apodo";
     const li = document.createElement("li");
 
     const info = document.createElement("span");
     info.className = "info-clase";
-    info.textContent = apodo || "Amigo sin apodo";
+    info.textContent = nombre;
 
     li.appendChild(info);
     li.insertAdjacentHTML("beforeend", badgeEstado(estado));
+
+    const acciones = document.createElement("span");
+    acciones.className = "acciones-clase acciones-amigo";
+
+    const etiquetaCompartir = document.createElement("label");
+    etiquetaCompartir.className = "switch-compartir";
+    etiquetaCompartir.title = "Elige si este amigo puede ver tu horario";
+    const casilla = document.createElement("input");
+    casilla.type = "checkbox";
+    casilla.checked = misPermitidos.includes(amigo.uid);
+    casilla.addEventListener("change", () => cambiarPermiso(amigo.uid, casilla));
+    etiquetaCompartir.appendChild(casilla);
+    etiquetaCompartir.appendChild(document.createTextNode(" Ve mi horario"));
+    acciones.appendChild(etiquetaCompartir);
+
+    if (clasesAmigo) {
+      const btnVer = document.createElement("button");
+      btnVer.type = "button";
+      btnVer.className = "btn-ver-horario";
+      btnVer.textContent = "Ver horario";
+      btnVer.addEventListener("click", () => abrirHorarioAmigo(nombre, clasesAmigo));
+      acciones.appendChild(btnVer);
+    }
+
+    li.appendChild(acciones);
     listaAmigos.appendChild(li);
   }
 }
+
+// ---------- Compartir horario con amigos elegidos ----------
+
+async function obtenerMisPermitidos() {
+  try {
+    const snapshot = await getDoc(doc(db, "horariosCompartidos", usuarioActual.uid));
+    return snapshot.exists() ? snapshot.data().permitidos || [] : [];
+  } catch {
+    return [];
+  }
+}
+
+// Devuelve las clases del amigo solo si él te dio permiso;
+// si no, Firestore niega la lectura y devolvemos null.
+async function obtenerHorarioDeAmigo(uid) {
+  try {
+    const snapshot = await getDoc(doc(db, "horariosCompartidos", uid));
+    return snapshot.exists() ? snapshot.data().clases || [] : null;
+  } catch {
+    return null;
+  }
+}
+
+async function cambiarPermiso(uidAmigo, casilla) {
+  casilla.disabled = true;
+  try {
+    await setDoc(
+      doc(db, "horariosCompartidos", usuarioActual.uid),
+      { clases, permitidos: casilla.checked ? arrayUnion(uidAmigo) : arrayRemove(uidAmigo) },
+      { merge: true }
+    );
+  } catch (error) {
+    console.error(error);
+    casilla.checked = !casilla.checked;
+    alert(
+      error.code === "permission-denied"
+        ? "Firebase no dio permiso para guardar esto. Revisa que las reglas de 'horariosCompartidos' estén publicadas."
+        : `No se pudo cambiar el permiso (${error.code || error.message}). Intenta de nuevo.`
+    );
+  } finally {
+    casilla.disabled = false;
+  }
+}
+
+const modalHorarioAmigo = document.getElementById("modal-horario-amigo");
+const tituloHorarioAmigo = document.getElementById("titulo-horario-amigo");
+const gridAmigo = document.getElementById("grid-amigo");
+const agendaAmigo = document.getElementById("agenda-amigo");
+
+function abrirHorarioAmigo(nombre, clasesAmigo) {
+  tituloHorarioAmigo.textContent = `Horario de ${nombre}`;
+  construirEsqueletoGrid(gridAmigo);
+  pintarClasesEnGrid(gridAmigo, clasesAmigo, false);
+  pintarAgendaMovil(agendaAmigo, clasesAmigo, false);
+  modalHorarioAmigo.hidden = false;
+}
+
+document.getElementById("btn-cerrar-horario-amigo").addEventListener("click", () => {
+  modalHorarioAmigo.hidden = true;
+});
+
+modalHorarioAmigo.addEventListener("click", (evento) => {
+  if (evento.target === modalHorarioAmigo) modalHorarioAmigo.hidden = true;
+});
 
 function minutosDesde(horaStr) {
   const [h, m] = horaStr.split(":").map(Number);
   return h * 60 + m;
 }
 
-function colorParaMateria(materia) {
-  const nombresUnicos = [...new Set(clases.map((c) => c.materia))];
+function colorParaMateria(materia, listaClases = clases) {
+  const nombresUnicos = [...new Set(listaClases.map((c) => c.materia))];
   if (!nombresUnicos.includes(materia)) nombresUnicos.push(materia);
   const indice = nombresUnicos.indexOf(materia) % PALETA_COLORES.length;
   return PALETA_COLORES[indice];
 }
 
-function construirEsqueletoGrid() {
+function construirEsqueletoGrid(grid = document.getElementById("grid-horario")) {
   grid.innerHTML = "";
   grid.style.gridTemplateRows = `36px repeat(${FILAS_TOTALES}, 28px)`;
 
@@ -713,8 +822,8 @@ function construirEsqueletoGrid() {
   }
 }
 
-function pintarClasesEnGrid() {
-  clases.forEach((clase) => {
+function pintarClasesEnGrid(grid = document.getElementById("grid-horario"), listaClases = clases, editable = true) {
+  listaClases.forEach((clase) => {
     const inicioMin = minutosDesde(clase.horaInicio) - HORA_INICIO_GRID * 60;
     const finMin = minutosDesde(clase.horaFin) - HORA_INICIO_GRID * 60;
     const filaInicio = 2 + Math.max(0, Math.round(inicioMin / 30));
@@ -729,31 +838,36 @@ function pintarClasesEnGrid() {
       bloque.className = "bloque-clase";
       bloque.style.gridColumn = String(diaIndice + 2);
       bloque.style.gridRow = `${filaInicio} / ${filaFin}`;
-      bloque.style.background = colorParaMateria(clase.materia);
+      bloque.style.background = colorParaMateria(clase.materia, listaClases);
       bloque.innerHTML = `
         <strong>${escaparHtml(clase.materia)}</strong>
         ${clase.aula ? `<span>${escaparHtml(clase.aula)}</span>` : ""}
         ${clase.profesor ? `<span>${escaparHtml(clase.profesor)}</span>` : ""}
       `;
 
-      const btnX = document.createElement("button");
-      btnX.type = "button";
-      btnX.className = "btn-borrar-bloque";
-      btnX.textContent = "×";
-      btnX.title = "Eliminar esta clase";
-      btnX.addEventListener("click", () => eliminarClase(clase.id));
-      bloque.appendChild(btnX);
+      if (editable) {
+        const btnX = document.createElement("button");
+        btnX.type = "button";
+        btnX.className = "btn-borrar-bloque";
+        btnX.textContent = "×";
+        btnX.title = "Eliminar esta clase";
+        btnX.addEventListener("click", () => eliminarClase(clase.id));
+        bloque.appendChild(btnX);
+      }
 
       grid.appendChild(bloque);
     });
   });
 }
 
-function pintarAgendaMovil() {
-  const contenedor = document.getElementById("agenda-movil");
+function pintarAgendaMovil(
+  contenedor = document.getElementById("agenda-movil"),
+  listaClases = clases,
+  editable = true
+) {
   contenedor.innerHTML = "";
 
-  const diasConClases = DIAS.filter((dia) => clases.some((c) => c.dias.includes(dia)));
+  const diasConClases = DIAS.filter((dia) => listaClases.some((c) => (c.dias || []).includes(dia)));
 
   if (diasConClases.length === 0) {
     const vacio = document.createElement("p");
@@ -771,14 +885,14 @@ function pintarAgendaMovil() {
     titulo.textContent = dia;
     grupo.appendChild(titulo);
 
-    const clasesDelDia = clases
-      .filter((c) => c.dias.includes(dia))
+    const clasesDelDia = listaClases
+      .filter((c) => (c.dias || []).includes(dia))
       .sort((a, b) => minutosDesde(a.horaInicio) - minutosDesde(b.horaInicio));
 
     clasesDelDia.forEach((clase) => {
       const item = document.createElement("div");
       item.className = "agenda-clase";
-      item.style.background = colorParaMateria(clase.materia);
+      item.style.background = colorParaMateria(clase.materia, listaClases);
       item.innerHTML = `
         <strong>${escaparHtml(clase.materia)}</strong>
         <span>${clase.horaInicio} - ${clase.horaFin}</span>
@@ -786,13 +900,15 @@ function pintarAgendaMovil() {
         ${clase.profesor ? `<span>${escaparHtml(clase.profesor)}</span>` : ""}
       `;
 
-      const btnX = document.createElement("button");
-      btnX.type = "button";
-      btnX.className = "btn-borrar-bloque";
-      btnX.textContent = "×";
-      btnX.title = "Eliminar esta clase";
-      btnX.addEventListener("click", () => eliminarClase(clase.id));
-      item.appendChild(btnX);
+      if (editable) {
+        const btnX = document.createElement("button");
+        btnX.type = "button";
+        btnX.className = "btn-borrar-bloque";
+        btnX.textContent = "×";
+        btnX.title = "Eliminar esta clase";
+        btnX.addEventListener("click", () => eliminarClase(clase.id));
+        item.appendChild(btnX);
+      }
 
       grupo.appendChild(item);
     });

@@ -44,6 +44,17 @@
     </div>
   </div>
 
+  <div id="modal-horario-amigo" class="modal-overlay" hidden>
+    <div class="modal-colores modal-horario-amigo">
+      <button type="button" id="btn-cerrar-horario-amigo" class="btn-cerrar-modal" title="Cerrar">×</button>
+      <h2 id="titulo-horario-amigo">Horario</h2>
+      <div class="horario-scroll">
+        <div id="grid-amigo" class="grid-horario"></div>
+      </div>
+      <div id="agenda-amigo" class="agenda-movil"></div>
+    </div>
+  </div>
+
   <div id="auth-panel" class="auth-panel">
     <div id="auth-card" class="auth-card auth-card-login">
       <h2 id="auth-titulo">Inicia sesión</h2>
@@ -208,6 +219,7 @@
 
       <section class="panel-formulario">
         <h2>Mis amigos</h2>
+        <p class="modal-colores-subtexto">Marca "Ve mi horario" solo en los amigos a los que quieras mostrarles tus clases</p>
         <ul id="lista-amigos" class="lista-items"></ul>
       </section>
     </div>

@@ -410,6 +410,26 @@ header h1 {
   color: #64748b;
 }
 
+.switch-compartir {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.btn-ver-horario {
+  background: var(--gradiente-llamativo);
+  color: white;
+}
+
+.modal-horario-amigo {
+  max-width: 1100px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
 .btn-aceptar {
   background: #22c55e;
   color: white;
