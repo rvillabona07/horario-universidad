@@ -360,12 +360,110 @@ header h1 {
   padding: 1.5rem;
 }
 
-#form-agregar-amigo {
+#vista-cuentas {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+#form-cuenta input[type="text"],
+#form-cuenta input[type="number"] {
+  padding: 0.55rem;
+  border: 1px solid var(--color-borde);
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.cuenta-amigos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.cuenta-amigos .mensaje-vacio {
+  margin: 0;
+  padding: 0.3rem;
+}
+
+.cuenta-incluirme {
+  align-self: flex-start;
+}
+
+.cuenta-resumen {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  background: #f1e9ff;
+  border-radius: 8px;
+  font-weight: 700;
+  text-align: center;
+}
+
+#btn-crear-cuenta {
+  background: var(--gradiente-llamativo);
+  color: white;
+}
+
+.cuenta-detalle {
+  display: block;
+  color: #6b7280;
+  font-size: 0.75rem;
+  margin-top: 0.15rem;
+}
+
+.cuenta-pagada {
+  opacity: 0.55;
+}
+
+.lista-items li.cuenta-item {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.cuenta-cabecera {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.cuenta-personas {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.lista-items .cuenta-personas li {
+  border: none;
+  background: #faf7ff;
+  padding: 0.35rem 0.5rem;
+  flex-wrap: nowrap;
+}
+
+.lista-items .cuenta-personas .info-clase {
+  flex-basis: auto;
+}
+
+@media (max-width: 900px) {
+  #vista-cuentas {
+    padding: 1rem;
+    gap: 1rem;
+  }
+}
+
+#form-agregar-amigo,
+#form-cuenta {
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
 }
 
+#form-cuenta > label:not(.dia-check),
 #form-agregar-amigo label {
   display: flex;
   flex-direction: column;
@@ -428,6 +526,102 @@ header h1 {
   max-width: 1100px;
   max-height: 90vh;
   overflow-y: auto;
+}
+
+.barra-horario {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.btn-abrir-pdf,
+.btn-descargar-pdf {
+  background: var(--gradiente-llamativo);
+  color: white;
+}
+
+.modal-pdf {
+  max-width: 900px;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.estilos-pdf {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 600px) {
+  .estilos-pdf {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.estilo-pdf {
+  padding: 0;
+  border: 3px solid transparent;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f1f5f9;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.estilo-pdf:hover {
+  transform: scale(1.04);
+}
+
+.estilo-pdf canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2000 / 1414;
+}
+
+.estilo-pdf-activo {
+  border-color: var(--color-primario);
+  box-shadow: 0 0 0 3px var(--color-borde);
+}
+
+.preview-pdf {
+  position: relative;
+  margin-bottom: 1rem;
+}
+
+.preview-pdf canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2000 / 1414;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  background: #f1f5f9;
+}
+
+.pdf-cargando {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.pdf-cargando[hidden] {
+  display: none;
+}
+
+.btn-descargar-pdf {
+  width: 100%;
+  padding: 0.8rem;
+  font-size: 1rem;
 }
 
 .btn-aceptar {

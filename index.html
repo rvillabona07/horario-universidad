@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Mi Horario</title>
-  <link rel="stylesheet" href="style.css" />
+  <!-- Al publicar cambios, sube este número (aquí y en script.js abajo) -->
+  <link rel="stylesheet" href="style.css?v=5" />
 </head>
 <body>
   <header>
@@ -55,6 +56,20 @@
     </div>
   </div>
 
+  <div id="modal-pdf" class="modal-overlay" hidden>
+    <div class="modal-colores modal-pdf">
+      <button type="button" id="btn-cerrar-pdf" class="btn-cerrar-modal" title="Cerrar">×</button>
+      <h2>Descargar horario en PDF</h2>
+      <p class="modal-colores-subtexto">Elige un estilo para tu horario</p>
+      <div id="estilos-pdf" class="estilos-pdf"></div>
+      <div class="preview-pdf">
+        <canvas id="canvas-pdf"></canvas>
+        <p id="pdf-cargando" class="pdf-cargando" hidden>Preparando estilo…</p>
+      </div>
+      <button type="button" id="btn-descargar-pdf" class="btn-descargar-pdf">⬇️ Descargar PDF</button>
+    </div>
+  </div>
+
   <div id="auth-panel" class="auth-panel">
     <div id="auth-card" class="auth-card auth-card-login">
       <h2 id="auth-titulo">Inicia sesión</h2>
@@ -82,6 +97,7 @@
     <div class="tabs-principales">
       <button type="button" id="tab-horario" class="tab-boton tab-activo">📅 Horario</button>
       <button type="button" id="tab-amigos" class="tab-boton">👥 Amigos</button>
+      <button type="button" id="tab-cuentas" class="tab-boton">💸 Cuentas</button>
     </div>
 
     <div id="vista-horario">
@@ -168,7 +184,10 @@
     </div>
 
     <section class="panel-horario">
-      <p id="rango-semana" class="rango-semana"></p>
+      <div class="barra-horario">
+        <p id="rango-semana" class="rango-semana"></p>
+        <button type="button" id="btn-abrir-pdf" class="btn-abrir-pdf">📄 Descargar PDF</button>
+      </div>
 
       <div id="recordatorios-semana" class="recordatorios-semana"></div>
 
@@ -223,8 +242,45 @@
         <ul id="lista-amigos" class="lista-items"></ul>
       </section>
     </div>
+
+    <div id="vista-cuentas" hidden>
+      <section class="panel-formulario">
+        <h2>Nueva cuenta</h2>
+        <p class="modal-colores-subtexto">Pon lo que pagaste, marca quiénes estaban y la app lo divide en partes iguales y les avisa</p>
+        <form id="form-cuenta">
+          <label>
+            ¿Qué fue?
+            <input type="text" id="cuenta-descripcion" placeholder="Ej. Cervezas en el parche" maxlength="40" required />
+          </label>
+          <label>
+            ¿Cuánto pagaste?
+            <input type="number" id="cuenta-total" placeholder="Ej. 200000" min="1" step="any" inputmode="decimal" required />
+          </label>
+          <fieldset class="dias-fieldset">
+            <legend>¿Quiénes estaban?</legend>
+            <div id="cuenta-amigos" class="cuenta-amigos"></div>
+          </fieldset>
+          <label class="dia-check cuenta-incluirme">
+            <input type="checkbox" id="cuenta-incluirme" checked /> Incluirme en la división
+          </label>
+          <p id="cuenta-resumen" class="cuenta-resumen" hidden></p>
+          <p id="cuenta-error" class="auth-error" hidden></p>
+          <button type="submit" id="btn-crear-cuenta">Dividir y avisar</button>
+        </form>
+      </section>
+
+      <section class="panel-formulario">
+        <h2>Debes</h2>
+        <ul id="lista-debo" class="lista-items"></ul>
+      </section>
+
+      <section class="panel-formulario">
+        <h2>Te deben</h2>
+        <ul id="lista-me-deben" class="lista-items"></ul>
+      </section>
+    </div>
   </main>
 
-  <script type="module" src="script.js"></script>
+  <script type="module" src="script.js?v=5"></script>
 </body>
 </html>

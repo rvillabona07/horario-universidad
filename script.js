@@ -13,6 +13,7 @@ import {
   setDoc,
   addDoc,
   updateDoc,
+  deleteDoc,
   collection,
   query,
   where,
@@ -36,6 +37,36 @@ const firebaseConfig = {
 
 const VAPID_KEY =
   "BAA29H6pTN4RL5r7qzrWCTrrOugBTh8Hph9YeHcPL76eDhLe_wXeZ9CUKQFJ8ivMDbeBuLVqWDM43M_5rQDAkuk";
+
+// ---------- Actualización automática ----------
+// La versión es el "?v=" con que index.html carga este archivo. Cuando la
+// app se abre o vuelve a primer plano, revisa si index.html publicado trae
+// otra versión y, si es así, recarga para que nadie se quede con la vieja.
+
+const VERSION_ACTUAL = new URL(import.meta.url).searchParams.get("v");
+const CLAVE_RECARGA = "horarioRecargadoParaVersion";
+
+async function revisarActualizacion() {
+  try {
+    const respuesta = await fetch(`index.html?t=${Date.now()}`, { cache: "no-store" });
+    if (!respuesta.ok) return;
+    const coincidencia = (await respuesta.text()).match(/script\.js\?v=([\w.-]+)/);
+    const versionPublicada = coincidencia && coincidencia[1];
+    if (!versionPublicada || versionPublicada === VERSION_ACTUAL) return;
+
+    // Evita recargar en bucle si el navegador insiste en la copia vieja.
+    if (sessionStorage.getItem(CLAVE_RECARGA) === versionPublicada) return;
+    sessionStorage.setItem(CLAVE_RECARGA, versionPublicada);
+    location.reload();
+  } catch {
+    // Sin internet o sin sessionStorage: se revisa la próxima vez.
+  }
+}
+
+revisarActualizacion();
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") revisarActualizacion();
+});
 
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
@@ -423,24 +454,20 @@ onAuthStateChanged(auth, async (user) => {
 
 // ---------- Amigos ----------
 
-const tabHorario = document.getElementById("tab-horario");
-const tabAmigos = document.getElementById("tab-amigos");
-const vistaHorario = document.getElementById("vista-horario");
-const vistaAmigos = document.getElementById("vista-amigos");
+const PESTANAS = [
+  { tab: "tab-horario", vista: "vista-horario" },
+  { tab: "tab-amigos", vista: "vista-amigos", alAbrir: () => renderAmigos() },
+  { tab: "tab-cuentas", vista: "vista-cuentas", alAbrir: () => renderCuentas() },
+];
 
-tabHorario.addEventListener("click", () => {
-  tabHorario.classList.add("tab-activo");
-  tabAmigos.classList.remove("tab-activo");
-  vistaHorario.hidden = false;
-  vistaAmigos.hidden = true;
-});
-
-tabAmigos.addEventListener("click", () => {
-  tabAmigos.classList.add("tab-activo");
-  tabHorario.classList.remove("tab-activo");
-  vistaHorario.hidden = true;
-  vistaAmigos.hidden = false;
-  renderAmigos();
+PESTANAS.forEach((pestana) => {
+  document.getElementById(pestana.tab).addEventListener("click", () => {
+    PESTANAS.forEach((otra) => {
+      document.getElementById(otra.tab).classList.toggle("tab-activo", otra === pestana);
+      document.getElementById(otra.vista).hidden = otra !== pestana;
+    });
+    if (pestana.alAbrir) pestana.alAbrir();
+  });
 });
 
 function generarCodigoAleatorio() {
@@ -584,6 +611,31 @@ function badgeEstado(estado) {
   return `<span class="estado-badge estado-desconocido">Sin datos</span>`;
 }
 
+function amigosDesdeSolicitudes(snapshotDestino, snapshotOrigen) {
+  return [
+    ...snapshotDestino.docs
+      .filter((d) => d.data().estado === "aceptada")
+      .map((d) => ({ uid: d.data().de })),
+    ...snapshotOrigen.docs
+      .filter((d) => d.data().estado === "aceptada")
+      .map((d) => ({ uid: d.data().para })),
+  ];
+}
+
+async function obtenerAmigos() {
+  const [snapshotDestino, snapshotOrigen] = await Promise.all([
+    getDocs(query(collection(db, "solicitudesAmistad"), where("para", "==", usuarioActual.uid))),
+    getDocs(query(collection(db, "solicitudesAmistad"), where("de", "==", usuarioActual.uid))),
+  ]);
+  const amigos = amigosDesdeSolicitudes(snapshotDestino, snapshotOrigen);
+  await Promise.all(
+    amigos.map(async (amigo) => {
+      amigo.apodo = (await obtenerApodo(amigo.uid)) || "Amigo sin apodo";
+    })
+  );
+  return amigos;
+}
+
 async function renderAmigos() {
   miCodigoEl.textContent = "......";
   const codigo = await asegurarCodigoPropio();
@@ -645,14 +697,7 @@ async function renderAmigos() {
   }
 
   listaAmigos.innerHTML = "";
-  const amigosAceptados = [
-    ...snapshotDestino.docs
-      .filter((d) => d.data().estado === "aceptada")
-      .map((d) => ({ uid: d.data().de })),
-    ...snapshotOrigen.docs
-      .filter((d) => d.data().estado === "aceptada")
-      .map((d) => ({ uid: d.data().para })),
-  ];
+  const amigosAceptados = amigosDesdeSolicitudes(snapshotDestino, snapshotOrigen);
 
   if (amigosAceptados.length === 0) {
     const vacio = document.createElement("li");
@@ -770,6 +815,275 @@ document.getElementById("btn-cerrar-horario-amigo").addEventListener("click", ()
 
 modalHorarioAmigo.addEventListener("click", (evento) => {
   if (evento.target === modalHorarioAmigo) modalHorarioAmigo.hidden = true;
+});
+
+// ---------- Cuentas (dividir gastos entre amigos) ----------
+// Cada cuenta la crea quien pagó. El total se divide en partes iguales entre
+// los amigos marcados (y quien pagó, si se incluye). El aviso a cada amigo
+// lo manda el script de recordatorios (check-clases.js) en su siguiente
+// revisión, porque las notificaciones solo se pueden enviar desde el servidor.
+
+const formCuenta = document.getElementById("form-cuenta");
+const cuentaDescripcion = document.getElementById("cuenta-descripcion");
+const cuentaTotal = document.getElementById("cuenta-total");
+const cuentaAmigosEl = document.getElementById("cuenta-amigos");
+const cuentaIncluirme = document.getElementById("cuenta-incluirme");
+const cuentaResumen = document.getElementById("cuenta-resumen");
+const cuentaError = document.getElementById("cuenta-error");
+const btnCrearCuenta = document.getElementById("btn-crear-cuenta");
+const listaDebo = document.getElementById("lista-debo");
+const listaMeDeben = document.getElementById("lista-me-deben");
+
+const formatoPesos = new Intl.NumberFormat("es-CO", {
+  style: "currency",
+  currency: "COP",
+  maximumFractionDigits: 0,
+});
+
+function pesos(valor) {
+  return formatoPesos.format(valor);
+}
+
+function fechaCorta(milisegundos) {
+  const fecha = new Date(milisegundos);
+  return `${fecha.getDate()} ${MESES[fecha.getMonth()].slice(0, 3)}`;
+}
+
+function calcularDivision() {
+  const total = Number(cuentaTotal.value);
+  const participantes = [...cuentaAmigosEl.querySelectorAll("input:checked")].map((c) => c.value);
+  const personas = participantes.length + (cuentaIncluirme.checked ? 1 : 0);
+  if (!(total > 0) || participantes.length === 0) return null;
+  return { total, participantes, personas, porPersona: Math.round(total / personas) };
+}
+
+function actualizarResumenCuenta() {
+  const division = calcularDivision();
+  cuentaResumen.hidden = !division;
+  if (division) {
+    cuentaResumen.textContent = `${pesos(division.total)} ÷ ${division.personas} ${
+      division.personas === 1 ? "persona" : "personas"
+    } = ${pesos(division.porPersona)} cada uno`;
+  }
+}
+
+cuentaTotal.addEventListener("input", actualizarResumenCuenta);
+cuentaIncluirme.addEventListener("change", actualizarResumenCuenta);
+cuentaAmigosEl.addEventListener("change", actualizarResumenCuenta);
+
+function mensajeVacio(lista, texto) {
+  const vacio = document.createElement("li");
+  vacio.className = "mensaje-vacio";
+  vacio.textContent = texto;
+  lista.appendChild(vacio);
+}
+
+function pintarAmigosCuenta(amigos) {
+  const marcadosAntes = new Set(
+    [...cuentaAmigosEl.querySelectorAll("input:checked")].map((c) => c.value)
+  );
+  cuentaAmigosEl.innerHTML = "";
+
+  if (amigos.length === 0) {
+    const aviso = document.createElement("p");
+    aviso.className = "mensaje-vacio";
+    aviso.textContent = "Agrega amigos en la pestaña Amigos para poder dividir cuentas.";
+    cuentaAmigosEl.appendChild(aviso);
+    return;
+  }
+
+  amigos.forEach((amigo) => {
+    const etiqueta = document.createElement("label");
+    etiqueta.className = "dia-check";
+    const casilla = document.createElement("input");
+    casilla.type = "checkbox";
+    casilla.value = amigo.uid;
+    casilla.checked = marcadosAntes.has(amigo.uid);
+    etiqueta.appendChild(casilla);
+    etiqueta.appendChild(document.createTextNode(` ${amigo.apodo}`));
+    cuentaAmigosEl.appendChild(etiqueta);
+  });
+}
+
+async function marcarPagado(idCuenta, uid) {
+  try {
+    await updateDoc(doc(db, "cuentas", idCuenta), { [`pagos.${uid}`]: true });
+  } catch (error) {
+    console.error(error);
+    alert("No se pudo marcar como pagado. Intenta de nuevo.");
+  }
+  renderCuentas();
+}
+
+async function eliminarCuenta(idCuenta) {
+  if (!confirm("¿Eliminar esta cuenta? Tus amigos dejarán de verla.")) return;
+  try {
+    await deleteDoc(doc(db, "cuentas", idCuenta));
+  } catch (error) {
+    console.error(error);
+    alert("No se pudo eliminar. Intenta de nuevo.");
+  }
+  renderCuentas();
+}
+
+function botonAccion(texto, clase, alHacerClic) {
+  const boton = document.createElement("button");
+  boton.type = "button";
+  boton.className = clase;
+  boton.textContent = texto;
+  boton.addEventListener("click", alHacerClic);
+  return boton;
+}
+
+async function renderCuentas() {
+  const amigos = await obtenerAmigos();
+  pintarAmigosCuenta(amigos);
+  actualizarResumenCuenta();
+
+  const [snapshotCreadas, snapshotDebo] = await Promise.all([
+    getDocs(query(collection(db, "cuentas"), where("creador", "==", usuarioActual.uid))),
+    getDocs(query(collection(db, "cuentas"), where("participantes", "array-contains", usuarioActual.uid))),
+  ]);
+
+  const apodos = Object.fromEntries(amigos.map((a) => [a.uid, a.apodo]));
+  const nombreDe = async (uid) => {
+    if (!apodos[uid]) apodos[uid] = (await obtenerApodo(uid)) || "Alguien";
+    return apodos[uid];
+  };
+  const recientesPrimero = (a, b) => b.data().creada - a.data().creada;
+
+  // Lo que yo debo: primero lo pendiente, luego lo ya pagado.
+  listaDebo.innerHTML = "";
+  const deudas = [...snapshotDebo.docs].sort(recientesPrimero);
+  const pendientesPrimero = [
+    ...deudas.filter((d) => !d.data().pagos?.[usuarioActual.uid]),
+    ...deudas.filter((d) => d.data().pagos?.[usuarioActual.uid]),
+  ];
+  if (pendientesPrimero.length === 0) mensajeVacio(listaDebo, "No le debes nada a nadie 🎉");
+
+  for (const docCuenta of pendientesPrimero) {
+    const cuenta = docCuenta.data();
+    const pagado = Boolean(cuenta.pagos?.[usuarioActual.uid]);
+    const acreedor = await nombreDe(cuenta.creador);
+
+    const li = document.createElement("li");
+    if (pagado) li.classList.add("cuenta-pagada");
+    const info = document.createElement("span");
+    info.className = "info-clase";
+    const principal = document.createElement("strong");
+    principal.textContent = pagado
+      ? `Le pagaste ${pesos(cuenta.porPersona)} a ${acreedor}`
+      : `Le debes ${pesos(cuenta.porPersona)} a ${acreedor}`;
+    const detalle = document.createElement("small");
+    detalle.className = "cuenta-detalle";
+    detalle.textContent = `${cuenta.descripcion} · ${fechaCorta(cuenta.creada)}`;
+    info.append(principal, detalle);
+    li.appendChild(info);
+
+    if (!pagado) {
+      const acciones = document.createElement("span");
+      acciones.className = "acciones-clase";
+      acciones.appendChild(
+        botonAccion("Ya pagué", "btn-aceptar", () => marcarPagado(docCuenta.id, usuarioActual.uid))
+      );
+      li.appendChild(acciones);
+    }
+    listaDebo.appendChild(li);
+  }
+
+  // Lo que me deben: una tarjeta por cuenta con cada amigo y su estado.
+  listaMeDeben.innerHTML = "";
+  const creadas = [...snapshotCreadas.docs].sort(recientesPrimero);
+  if (creadas.length === 0) mensajeVacio(listaMeDeben, "No has dividido ninguna cuenta todavía.");
+
+  for (const docCuenta of creadas) {
+    const cuenta = docCuenta.data();
+    const participantes = cuenta.participantes || [];
+    const faltan = participantes.filter((uid) => !cuenta.pagos?.[uid]).length;
+
+    const li = document.createElement("li");
+    li.className = "cuenta-item";
+    if (faltan === 0) li.classList.add("cuenta-pagada");
+
+    const cabecera = document.createElement("div");
+    cabecera.className = "cuenta-cabecera";
+    const info = document.createElement("span");
+    info.className = "info-clase";
+    const titulo = document.createElement("strong");
+    titulo.textContent = cuenta.descripcion;
+    const detalle = document.createElement("small");
+    detalle.className = "cuenta-detalle";
+    detalle.textContent = `${pesos(cuenta.total)} ÷ ${cuenta.personas} = ${pesos(cuenta.porPersona)} c/u · ${fechaCorta(
+      cuenta.creada
+    )} · ${faltan === 0 ? "¡Todos pagaron!" : `Faltan ${faltan}`}`;
+    info.append(titulo, detalle);
+    cabecera.appendChild(info);
+    cabecera.appendChild(botonAccion("Eliminar", "btn-eliminar", () => eliminarCuenta(docCuenta.id)));
+    li.appendChild(cabecera);
+
+    const listaPersonas = document.createElement("ul");
+    listaPersonas.className = "cuenta-personas";
+    for (const uid of participantes) {
+      const pagado = Boolean(cuenta.pagos?.[uid]);
+      const fila = document.createElement("li");
+      const texto = document.createElement("span");
+      texto.className = "info-clase";
+      texto.textContent = `${await nombreDe(uid)} · ${pesos(cuenta.porPersona)}`;
+      fila.appendChild(texto);
+      if (pagado) {
+        const estado = document.createElement("span");
+        estado.className = "estado-badge estado-libre";
+        estado.textContent = "Pagó";
+        fila.appendChild(estado);
+      } else {
+        fila.appendChild(botonAccion("Ya me pagó", "btn-editar", () => marcarPagado(docCuenta.id, uid)));
+      }
+      listaPersonas.appendChild(fila);
+    }
+    li.appendChild(listaPersonas);
+    listaMeDeben.appendChild(li);
+  }
+}
+
+formCuenta.addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  cuentaError.hidden = true;
+
+  const division = calcularDivision();
+  if (!division) {
+    cuentaError.textContent = "Escribe cuánto pagaste y marca al menos un amigo.";
+    cuentaError.hidden = false;
+    return;
+  }
+
+  btnCrearCuenta.disabled = true;
+  try {
+    await addDoc(collection(db, "cuentas"), {
+      creador: usuarioActual.uid,
+      descripcion: cuentaDescripcion.value.trim(),
+      total: division.total,
+      personas: division.personas,
+      porPersona: division.porPersona,
+      participantes: division.participantes,
+      pagos: Object.fromEntries(division.participantes.map((uid) => [uid, false])),
+      notificado: false,
+      creada: Date.now(),
+    });
+    formCuenta.reset();
+    cuentaAmigosEl.querySelectorAll("input").forEach((c) => (c.checked = false));
+    cuentaResumen.hidden = true;
+    alert(`¡Listo! Cada uno te debe ${pesos(division.porPersona)}. En unos minutos les llega el aviso.`);
+    renderCuentas();
+  } catch (error) {
+    console.error(error);
+    cuentaError.textContent =
+      error.code === "permission-denied"
+        ? "Firebase no dio permiso. Revisa que las reglas de 'cuentas' estén publicadas."
+        : "Ocurrió un error, intenta de nuevo.";
+    cuentaError.hidden = false;
+  } finally {
+    btnCrearCuenta.disabled = false;
+  }
 });
 
 function minutosDesde(horaStr) {
@@ -1202,6 +1516,120 @@ formPendiente.addEventListener("submit", (evento) => {
   guardarDatos();
   formPendiente.reset();
   render();
+});
+
+// ---------- Descargar PDF ----------
+
+const CLAVE_ESTILO_PDF = "horarioEstiloPdf";
+const modalPdf = document.getElementById("modal-pdf");
+const estilosPdfEl = document.getElementById("estilos-pdf");
+const canvasPdf = document.getElementById("canvas-pdf");
+const pdfCargando = document.getElementById("pdf-cargando");
+const btnDescargarPdf = document.getElementById("btn-descargar-pdf");
+
+let moduloPdf = null;
+let estiloPdf = "maquillaje";
+let dibujoPdfActual = 0;
+
+try {
+  estiloPdf = localStorage.getItem(CLAVE_ESTILO_PDF) || estiloPdf;
+} catch {}
+
+async function cargarModuloPdf() {
+  // Se carga solo cuando se usa, con la misma versión que script.js.
+  if (!moduloPdf) moduloPdf = await import(`./pdf-horario.js?v=${VERSION_ACTUAL}`);
+  return moduloPdf;
+}
+
+// Muestra cada estilo como una miniatura (sin nombre) para escoger.
+async function pintarMiniaturasEstilo(modulo) {
+  const estilos = modulo.LISTA_ESTILOS;
+  estilosPdfEl.innerHTML = "";
+  const botones = estilos.map((estilo) => {
+    const boton = document.createElement("button");
+    boton.type = "button";
+    boton.className = "estilo-pdf";
+    boton.setAttribute("aria-label", estilo.nombre);
+    boton.classList.toggle("estilo-pdf-activo", estilo.id === estiloPdf);
+    const miniatura = document.createElement("canvas");
+    boton.appendChild(miniatura);
+    boton.addEventListener("click", () => {
+      estiloPdf = estilo.id;
+      try {
+        localStorage.setItem(CLAVE_ESTILO_PDF, estilo.id);
+      } catch {}
+      estilosPdfEl.querySelectorAll(".estilo-pdf").forEach((b) => b.classList.remove("estilo-pdf-activo"));
+      boton.classList.add("estilo-pdf-activo");
+      dibujarVistaPdf();
+    });
+    estilosPdfEl.appendChild(boton);
+    return miniatura;
+  });
+
+  await Promise.all(estilos.map((estilo) => modulo.prepararEstilo(estilo.id)));
+
+  // Se dibuja en tamaño real en un canvas auxiliar y se copia reducido.
+  const auxiliar = document.createElement("canvas");
+  estilos.forEach((estilo, i) => {
+    modulo.dibujarHorario(auxiliar, clases, estilo.id);
+    const miniatura = botones[i];
+    miniatura.width = 400;
+    miniatura.height = Math.round((400 * auxiliar.height) / auxiliar.width);
+    miniatura.getContext("2d").drawImage(auxiliar, 0, 0, miniatura.width, miniatura.height);
+  });
+}
+
+async function dibujarVistaPdf() {
+  const turno = ++dibujoPdfActual;
+  pdfCargando.hidden = false;
+  btnDescargarPdf.disabled = true;
+  const modulo = await cargarModuloPdf();
+  await modulo.prepararEstilo(estiloPdf);
+  if (turno !== dibujoPdfActual) return; // se eligió otro estilo mientras cargaba
+  modulo.dibujarHorario(canvasPdf, clases, estiloPdf);
+  pdfCargando.hidden = true;
+  btnDescargarPdf.disabled = false;
+}
+
+document.getElementById("btn-abrir-pdf").addEventListener("click", async () => {
+  if (clases.length === 0) {
+    alert("Agrega al menos una clase para descargar tu horario.");
+    return;
+  }
+  modalPdf.hidden = false;
+  try {
+    const modulo = await cargarModuloPdf();
+    if (!modulo.LISTA_ESTILOS.some((e) => e.id === estiloPdf)) estiloPdf = modulo.LISTA_ESTILOS[0].id;
+    await pintarMiniaturasEstilo(modulo);
+    await dibujarVistaPdf();
+  } catch (error) {
+    console.error(error);
+    pdfCargando.textContent = "No se pudo cargar. Revisa tu conexión.";
+  }
+});
+
+btnDescargarPdf.addEventListener("click", async () => {
+  const textoOriginal = btnDescargarPdf.textContent;
+  btnDescargarPdf.disabled = true;
+  btnDescargarPdf.textContent = "Generando PDF…";
+  try {
+    const modulo = await cargarModuloPdf();
+    await modulo.descargarPdf(canvasPdf, estiloPdf);
+  } catch (error) {
+    console.error(error);
+    alert("No se pudo generar el PDF. Revisa tu conexión e intenta de nuevo.");
+  } finally {
+    btnDescargarPdf.disabled = false;
+    btnDescargarPdf.textContent = textoOriginal;
+  }
+});
+
+document.getElementById("btn-cerrar-pdf").addEventListener("click", () => {
+  modalPdf.hidden = true;
+});
+
+modalPdf.addEventListener("click", (evento) => {
+  if (evento.target === modalPdf) modalPdf.hidden = true;
 });
 
 btnCancelar.addEventListener("click", () => {
