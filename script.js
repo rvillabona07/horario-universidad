@@ -24,6 +24,7 @@ import {
 import {
   getMessaging,
   getToken,
+  onMessage,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
 
 const firebaseConfig = {
@@ -202,9 +203,23 @@ let messaging = null;
 if ("Notification" in window && "serviceWorker" in navigator) {
   messaging = getMessaging(firebaseApp);
 
-  // El aviso se muestra únicamente desde el service worker
-  // (firebase-messaging-sw.js), tanto con la app cerrada como abierta.
-  // No duplicamos con un manejador aquí para evitar avisos repetidos.
+  // Con la app en segundo plano o cerrada, el aviso lo muestra el service
+  // worker (firebase-messaging-sw.js). Con la app abierta en pantalla,
+  // Firebase entrega el mensaje aquí en vez de al service worker, así que
+  // lo mostramos nosotros; nunca llegan a los dos, no se duplica.
+  onMessage(messaging, async (payload) => {
+    if (!payload.data || !payload.data.title) return;
+    try {
+      const registro = await navigator.serviceWorker.getRegistration("firebase-messaging-sw.js");
+      if (registro) {
+        registro.showNotification(payload.data.title, { body: payload.data.body || "" });
+      } else {
+        new Notification(payload.data.title, { body: payload.data.body || "" });
+      }
+    } catch (error) {
+      console.error("No se pudo mostrar el aviso:", error);
+    }
+  });
 
   if (Notification.permission === "granted") {
     btnNotificaciones.title = "Notificaciones activadas";
