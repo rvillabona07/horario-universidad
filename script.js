@@ -956,43 +956,51 @@ function calcularPares(docsCreadas, docsDebo) {
       personas: cuenta.personas,
       creada: cuenta.creada,
       descripcion: cuenta.descripcion,
+      estado: cuenta.pagos?.[uid],
     };
   };
 
+  // pagos[uid]: false = pendiente, "reportado" = quien debe dice que ya
+  // pagó (falta que quien cobra lo confirme), true = pagado y confirmado.
   docsCreadas.forEach((docCuenta) => {
     const cuenta = docCuenta.data();
     (cuenta.participantes || []).forEach((uid) => {
-      if (!cuenta.pagos?.[uid]) parDe(uid).meDebe.push(item(docCuenta, uid));
+      if (cuenta.pagos?.[uid] !== true) parDe(uid).meDebe.push(item(docCuenta, uid));
     });
   });
 
   docsDebo.forEach((docCuenta) => {
     const cuenta = docCuenta.data();
-    if (!cuenta.pagos?.[miUid]) parDe(cuenta.creador).leDebo.push(item(docCuenta, miUid));
+    if (cuenta.pagos?.[miUid] !== true) parDe(cuenta.creador).leDebo.push(item(docCuenta, miUid));
   });
 
   const suma = (lista) => lista.reduce((total, i) => total + i.monto, 0);
   Object.values(pares).forEach((par) => {
     par.neto = suma(par.meDebe) - suma(par.leDebo); // > 0: el amigo me debe
+    const todos = [...par.meDebe, ...par.leDebo];
+    par.reportado = todos.length > 0 && todos.every((i) => i.estado === "reportado");
   });
   return pares;
 }
 
+async function cambiarEstadoPar(par, estado) {
+  await Promise.all(
+    [...par.meDebe, ...par.leDebo].map(({ id, uid }) =>
+      updateDoc(doc(db, "cuentas", id), { [`pagos.${uid}`]: estado })
+    )
+  );
+}
+
+// Lo usa quien cobra: da por pagadas todas las cuentas entre los dos.
 async function saldarPar(apodo, par) {
   const pregunta =
     par.neto > 0
-      ? `¿${apodo} ya te pagó ${pesos(par.neto)}?`
-      : par.neto < 0
-        ? `¿Ya le pagaste ${pesos(-par.neto)} a ${apodo}?`
-        : `¿Dejar a paz y salvo las cuentas con ${apodo}?`;
+      ? `¿Confirmas que ${apodo} ya te pagó ${pesos(par.neto)}?`
+      : `¿Dejar a paz y salvo las cuentas con ${apodo}?`;
   if (!confirm(`${pregunta}\n\nSe marcarán como pagadas todas las cuentas pendientes entre ustedes dos.`)) return;
 
   try {
-    await Promise.all(
-      [...par.meDebe, ...par.leDebo].map(({ id, uid }) =>
-        updateDoc(doc(db, "cuentas", id), { [`pagos.${uid}`]: true })
-      )
-    );
+    await cambiarEstadoPar(par, true);
   } catch (error) {
     console.error(error);
     alert("No se pudo marcar como pagado. Intenta de nuevo.");
@@ -1000,8 +1008,34 @@ async function saldarPar(apodo, par) {
   renderCuentas();
 }
 
+// Lo usa quien debe: avisa que ya pagó y queda esperando la confirmación.
+async function reportarPago(apodo, uidAmigo, par) {
+  if (!confirm(`¿Ya le pagaste ${pesos(-par.neto)} a ${apodo}?\n\n${apodo} tendrá que confirmarlo en su app.`)) return;
+
+  try {
+    await cambiarEstadoPar(par, "reportado");
+    avisarAlInstante("avisar-pago", { amigo: uidAmigo });
+  } catch (error) {
+    console.error(error);
+    alert("No se pudo avisar el pago. Intenta de nuevo.");
+  }
+  renderCuentas();
+}
+
+async function rechazarPago(apodo, par) {
+  if (!confirm(`¿${apodo} todavía no te ha pagado?\n\nLa deuda vuelve a quedar pendiente.`)) return;
+
+  try {
+    await cambiarEstadoPar(par, false);
+  } catch (error) {
+    console.error(error);
+    alert("No se pudo cambiar. Intenta de nuevo.");
+  }
+  renderCuentas();
+}
+
 // Una línea con el monto final y, al tocar "Más info", el cálculo completo.
-function pintarPersona(lista, apodo, par) {
+function pintarPersona(lista, uidAmigo, apodo, par) {
   const meDeben = par.neto >= 0;
   const li = document.createElement("li");
   li.className = "cuenta-item";
@@ -1010,18 +1044,35 @@ function pintarPersona(lista, apodo, par) {
   cabecera.className = "cuenta-cabecera";
   const principal = document.createElement("strong");
   principal.className = "info-clase";
-  principal.textContent =
-    par.neto > 0
-      ? `${apodo} te debe ${pesos(par.neto)}`
-      : par.neto < 0
-        ? `Le debes ${pesos(-par.neto)} a ${apodo}`
-        : `Con ${apodo} quedan a mano`;
-  cabecera.appendChild(principal);
-  cabecera.appendChild(
-    botonAccion(par.neto > 0 ? "Ya me pagó" : par.neto < 0 ? "Ya pagué" : "Listo", "btn-aceptar", () =>
-      saldarPar(apodo, par)
-    )
-  );
+  const acciones = document.createElement("span");
+  acciones.className = "acciones-clase";
+
+  if (par.neto > 0 && par.reportado) {
+    principal.textContent = `${apodo} dice que ya te pagó ${pesos(par.neto)}`;
+    acciones.append(
+      botonAccion("Confirmar", "btn-aceptar", () => saldarPar(apodo, par)),
+      botonAccion("No me ha pagado", "btn-rechazar", () => rechazarPago(apodo, par))
+    );
+  } else if (par.neto > 0) {
+    principal.textContent = `${apodo} te debe ${pesos(par.neto)}`;
+    acciones.appendChild(botonAccion("Ya me pagó", "btn-aceptar", () => saldarPar(apodo, par)));
+  } else if (par.neto < 0 && par.reportado) {
+    principal.textContent = `Le debes ${pesos(-par.neto)} a ${apodo}`;
+    const espera = document.createElement("span");
+    espera.className = "estado-badge estado-desconocido";
+    espera.textContent = `Esperando que ${apodo} confirme`;
+    acciones.appendChild(espera);
+  } else if (par.neto < 0) {
+    principal.textContent = `Le debes ${pesos(-par.neto)} a ${apodo}`;
+    acciones.appendChild(
+      botonAccion("Ya pagué", "btn-aceptar", () => reportarPago(apodo, uidAmigo, par))
+    );
+  } else {
+    principal.textContent = `Con ${apodo} quedan a mano`;
+    acciones.appendChild(botonAccion("Listo", "btn-aceptar", () => saldarPar(apodo, par)));
+  }
+
+  cabecera.append(principal, acciones);
   li.appendChild(cabecera);
 
   const masInfo = document.createElement("details");
@@ -1108,7 +1159,7 @@ async function renderCuentas() {
 
   for (const [uid, par] of pares) {
     const apodo = await nombreDe(uid);
-    pintarPersona(par.neto < 0 ? listaDebo : listaMeDeben, apodo, par);
+    pintarPersona(par.neto < 0 ? listaDebo : listaMeDeben, uid, apodo, par);
   }
 
   if (!listaDebo.children.length) mensajeVacio(listaDebo, "No le debes nada a nadie 🎉");
@@ -1117,16 +1168,16 @@ async function renderCuentas() {
 
 // Servidor de avisos instantáneos (carpeta horario-avisos, en Cloudflare).
 // Si falla, el script de GitHub manda el aviso en su siguiente revisión.
-const URL_AVISOS = "https://horario-avisos.horario-avisos.workers.dev/avisar-cuenta";
+const URL_AVISOS = "https://horario-avisos.horario-avisos.workers.dev";
 
-async function avisarAlInstante(idCuenta) {
-  if (!URL_AVISOS) return;
+// ruta: "avisar-cuenta" ({ idCuenta }) o "avisar-pago" ({ amigo }).
+async function avisarAlInstante(ruta, datos) {
   try {
     const token = await usuarioActual.getIdToken();
-    await fetch(URL_AVISOS, {
+    await fetch(`${URL_AVISOS}/${ruta}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ idCuenta }),
+      body: JSON.stringify(datos),
     });
   } catch (error) {
     console.error("Aviso instantáneo falló (llegará en la próxima revisión):", error);
@@ -1157,7 +1208,7 @@ formCuenta.addEventListener("submit", async (evento) => {
       notificado: false,
       creada: Date.now(),
     });
-    avisarAlInstante(nuevaCuenta.id);
+    avisarAlInstante("avisar-cuenta", { idCuenta: nuevaCuenta.id });
     formCuenta.reset();
     cuentaAmigosEl.querySelectorAll("input").forEach((c) => (c.checked = false));
     cuentaResumen.hidden = true;
