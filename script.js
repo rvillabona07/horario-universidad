@@ -904,16 +904,6 @@ function pintarAmigosCuenta(amigos) {
   });
 }
 
-async function marcarPagado(idCuenta, uid) {
-  try {
-    await updateDoc(doc(db, "cuentas", idCuenta), { [`pagos.${uid}`]: true });
-  } catch (error) {
-    console.error(error);
-    alert("No se pudo marcar como pagado. Intenta de nuevo.");
-  }
-  renderCuentas();
-}
-
 async function eliminarCuenta(idCuenta) {
   if (!confirm("¿Eliminar esta cuenta? Tus amigos dejarán de verla.")) return;
   try {
@@ -934,65 +924,43 @@ function botonAccion(texto, clase, alHacerClic) {
   return boton;
 }
 
-// Cruce automático: si un amigo te debe por una cuenta tuya y tú le debes
-// por una cuenta suya, se descuentan entre sí (primero las más viejas) y
-// solo queda la diferencia. Cada pareja va por separado, así que los demás
-// siguen debiendo lo mismo.
-function calcularCruces(docsCreadas, docsDebo) {
+// Agrupa lo pendiente por amigo y lo cruza: lo que me debe por mis cuentas
+// menos lo que yo le debo por las suyas. Solo queda la diferencia, y cada
+// pareja va por separado, así que los demás siguen debiendo lo mismo.
+function calcularPares(docsCreadas, docsDebo) {
   const miUid = usuarioActual.uid;
   const pares = {};
   const parDe = (uid) => (pares[uid] ||= { meDebe: [], leDebo: [] });
+  const item = (docCuenta, uid) => {
+    const cuenta = docCuenta.data();
+    return {
+      id: docCuenta.id,
+      uid,
+      monto: cuenta.porPersona,
+      total: cuenta.total,
+      personas: cuenta.personas,
+      creada: cuenta.creada,
+      descripcion: cuenta.descripcion,
+    };
+  };
 
   docsCreadas.forEach((docCuenta) => {
     const cuenta = docCuenta.data();
     (cuenta.participantes || []).forEach((uid) => {
-      if (cuenta.pagos?.[uid]) return;
-      parDe(uid).meDebe.push({
-        id: docCuenta.id,
-        uid,
-        monto: cuenta.porPersona,
-        creada: cuenta.creada,
-        descripcion: cuenta.descripcion,
-      });
+      if (!cuenta.pagos?.[uid]) parDe(uid).meDebe.push(item(docCuenta, uid));
     });
   });
 
   docsDebo.forEach((docCuenta) => {
     const cuenta = docCuenta.data();
-    if (cuenta.pagos?.[miUid]) return;
-    parDe(cuenta.creador).leDebo.push({
-      id: docCuenta.id,
-      uid: miUid,
-      monto: cuenta.porPersona,
-      creada: cuenta.creada,
-      descripcion: cuenta.descripcion,
-    });
+    if (!cuenta.pagos?.[miUid]) parDe(cuenta.creador).leDebo.push(item(docCuenta, miUid));
   });
 
-  const porFila = {}; // "idCuenta|uid" -> { restante, descontado, con, par }
-  const suma = (lista) => lista.reduce((total, item) => total + item.monto, 0);
-
+  const suma = (lista) => lista.reduce((total, i) => total + i.monto, 0);
   Object.values(pares).forEach((par) => {
     par.neto = suma(par.meDebe) - suma(par.leDebo); // > 0: el amigo me debe
-    par.hayCruce = par.meDebe.length > 0 && par.leDebo.length > 0;
-    const compensado = Math.min(suma(par.meDebe), suma(par.leDebo));
-
-    const repartir = (lista, otra) => {
-      const con = [...new Set(otra.map((item) => `"${item.descripcion}"`))].join(", ");
-      let queda = compensado;
-      [...lista]
-        .sort((a, b) => a.creada - b.creada)
-        .forEach((item) => {
-          const descontado = Math.min(item.monto, queda);
-          queda -= descontado;
-          porFila[`${item.id}|${item.uid}`] = { restante: item.monto - descontado, descontado, con, par };
-        });
-    };
-    repartir(par.meDebe, par.leDebo);
-    repartir(par.leDebo, par.meDebe);
   });
-
-  return porFila;
+  return pares;
 }
 
 async function saldarPar(apodo, par) {
@@ -1002,9 +970,7 @@ async function saldarPar(apodo, par) {
       : par.neto < 0
         ? `¿Ya le pagaste ${pesos(-par.neto)} a ${apodo}?`
         : `¿Dejar a paz y salvo las cuentas con ${apodo}?`;
-  if (!confirm(`${pregunta}\n\nComo sus cuentas se cruzaron, se marcarán como pagadas todas las pendientes entre ustedes dos.`)) {
-    return;
-  }
+  if (!confirm(`${pregunta}\n\nSe marcarán como pagadas todas las cuentas pendientes entre ustedes dos.`)) return;
 
   try {
     await Promise.all(
@@ -1019,10 +985,87 @@ async function saldarPar(apodo, par) {
   renderCuentas();
 }
 
-// Si hubo cruce con ese amigo, pagar la diferencia salda todo entre los dos.
-function marcarPagadoConCruce(idCuenta, uid, apodo, fila) {
-  if (fila?.par.hayCruce) return saldarPar(apodo, fila.par);
-  return marcarPagado(idCuenta, uid);
+// Una línea con el monto final y, al tocar "Más info", el cálculo completo.
+function pintarPersona(lista, apodo, par) {
+  const meDeben = par.neto >= 0;
+  const li = document.createElement("li");
+  li.className = "cuenta-item";
+
+  const cabecera = document.createElement("div");
+  cabecera.className = "cuenta-cabecera";
+  const principal = document.createElement("strong");
+  principal.className = "info-clase";
+  principal.textContent =
+    par.neto > 0
+      ? `${apodo} te debe ${pesos(par.neto)}`
+      : par.neto < 0
+        ? `Le debes ${pesos(-par.neto)} a ${apodo}`
+        : `Con ${apodo} quedan a mano`;
+  cabecera.appendChild(principal);
+  cabecera.appendChild(
+    botonAccion(par.neto > 0 ? "Ya me pagó" : par.neto < 0 ? "Ya pagué" : "Listo", "btn-aceptar", () =>
+      saldarPar(apodo, par)
+    )
+  );
+  li.appendChild(cabecera);
+
+  const masInfo = document.createElement("details");
+  masInfo.className = "cuenta-mas-info";
+  const resumen = document.createElement("summary");
+  resumen.textContent = "Más info";
+  masInfo.appendChild(resumen);
+
+  const filaCalculo = (itemCuenta, esMia) => {
+    const suma = esMia === meDeben; // lo que va a favor de quien cobra
+    const fila = document.createElement("div");
+    fila.className = "calculo-fila";
+
+    const texto = document.createElement("span");
+    const nombre = document.createElement("strong");
+    nombre.textContent = `${itemCuenta.descripcion} · ${fechaCorta(itemCuenta.creada)}`;
+    const explicacion = document.createElement("small");
+    explicacion.className = "cuenta-detalle";
+    explicacion.textContent = `${esMia ? "Pagaste" : `${apodo} pagó`} ${pesos(itemCuenta.total)} ÷ ${
+      itemCuenta.personas
+    } = ${pesos(itemCuenta.monto)} c/u`;
+    texto.append(nombre, explicacion);
+    if (esMia) {
+      texto.appendChild(
+        botonAccion("Eliminar cuenta", "btn-eliminar-mini", () => eliminarCuenta(itemCuenta.id))
+      );
+    }
+
+    const monto = document.createElement("span");
+    monto.className = suma ? "calculo-monto monto-mas" : "calculo-monto monto-menos";
+    monto.textContent = `${suma ? "+" : "−"} ${pesos(itemCuenta.monto)}`;
+
+    fila.append(texto, monto);
+    masInfo.appendChild(fila);
+  };
+
+  // Primero lo que suma a favor de quien cobra, luego lo que se descuenta.
+  const mias = [...par.meDebe].sort((a, b) => a.creada - b.creada);
+  const suyas = [...par.leDebo].sort((a, b) => a.creada - b.creada);
+  if (meDeben) {
+    mias.forEach((i) => filaCalculo(i, true));
+    suyas.forEach((i) => filaCalculo(i, false));
+  } else {
+    suyas.forEach((i) => filaCalculo(i, false));
+    mias.forEach((i) => filaCalculo(i, true));
+  }
+
+  const total = document.createElement("div");
+  total.className = "calculo-fila calculo-total";
+  const etiquetaTotal = document.createElement("span");
+  etiquetaTotal.textContent =
+    par.neto > 0 ? `${apodo} te debe` : par.neto < 0 ? `Le debes a ${apodo}` : "Quedan a mano";
+  const montoTotal = document.createElement("span");
+  montoTotal.textContent = `= ${pesos(Math.abs(par.neto))}`;
+  total.append(etiquetaTotal, montoTotal);
+  masInfo.appendChild(total);
+
+  li.appendChild(masInfo);
+  lista.appendChild(li);
 }
 
 async function renderCuentas() {
@@ -1040,131 +1083,21 @@ async function renderCuentas() {
     if (!apodos[uid]) apodos[uid] = (await obtenerApodo(uid)) || "Alguien";
     return apodos[uid];
   };
-  const recientesPrimero = (a, b) => b.data().creada - a.data().creada;
-  const cruces = calcularCruces(snapshotCreadas.docs, snapshotDebo.docs);
-  const miUid = usuarioActual.uid;
 
-  // Lo que yo debo: primero lo que falta por pagar, luego lo pagado o cruzado.
+  const pares = Object.entries(calcularPares(snapshotCreadas.docs, snapshotDebo.docs)).sort(
+    ([, a], [, b]) => Math.abs(b.neto) - Math.abs(a.neto)
+  );
+
   listaDebo.innerHTML = "";
-  const sigoDebiendo = (docCuenta) =>
-    !docCuenta.data().pagos?.[miUid] && (cruces[`${docCuenta.id}|${miUid}`]?.restante ?? 1) > 0;
-  const deudas = [...snapshotDebo.docs].sort(recientesPrimero);
-  const ordenadas = [...deudas.filter(sigoDebiendo), ...deudas.filter((d) => !sigoDebiendo(d))];
-  if (ordenadas.length === 0) mensajeVacio(listaDebo, "No le debes nada a nadie 🎉");
-
-  for (const docCuenta of ordenadas) {
-    const cuenta = docCuenta.data();
-    const pagado = Boolean(cuenta.pagos?.[miUid]);
-    const fila = cruces[`${docCuenta.id}|${miUid}`];
-    const acreedor = await nombreDe(cuenta.creador);
-
-    const li = document.createElement("li");
-    const info = document.createElement("span");
-    info.className = "info-clase";
-    const principal = document.createElement("strong");
-    const detalle = document.createElement("small");
-    detalle.className = "cuenta-detalle";
-    let detalleTexto = `${cuenta.descripcion} · ${fechaCorta(cuenta.creada)}`;
-
-    if (pagado) {
-      li.classList.add("cuenta-pagada");
-      principal.textContent = `Le pagaste ${pesos(cuenta.porPersona)} a ${acreedor}`;
-    } else if (fila && fila.restante === 0) {
-      li.classList.add("cuenta-pagada");
-      principal.textContent = `Cruzado con lo que ${acreedor} te debe`;
-      detalleTexto += ` · ${pesos(cuenta.porPersona)} descontados por ${fila.con}`;
-    } else {
-      const restante = fila ? fila.restante : cuenta.porPersona;
-      principal.textContent = `Le debes ${pesos(restante)} a ${acreedor}`;
-      if (fila?.descontado) detalleTexto += ` · se descontaron ${pesos(fila.descontado)} por ${fila.con}`;
-    }
-    detalle.textContent = detalleTexto;
-    info.append(principal, detalle);
-    li.appendChild(info);
-
-    if (!pagado && !(fila && fila.restante === 0)) {
-      const acciones = document.createElement("span");
-      acciones.className = "acciones-clase";
-      acciones.appendChild(
-        botonAccion("Ya pagué", "btn-aceptar", () =>
-          marcarPagadoConCruce(docCuenta.id, miUid, acreedor, fila)
-        )
-      );
-      li.appendChild(acciones);
-    }
-    listaDebo.appendChild(li);
-  }
-
-  // Lo que me deben: una tarjeta por cuenta con cada amigo y su estado.
   listaMeDeben.innerHTML = "";
-  const creadas = [...snapshotCreadas.docs].sort(recientesPrimero);
-  if (creadas.length === 0) mensajeVacio(listaMeDeben, "No has dividido ninguna cuenta todavía.");
 
-  for (const docCuenta of creadas) {
-    const cuenta = docCuenta.data();
-    const participantes = cuenta.participantes || [];
-    const faltan = participantes.filter(
-      (uid) => !cuenta.pagos?.[uid] && (cruces[`${docCuenta.id}|${uid}`]?.restante ?? 1) > 0
-    ).length;
-
-    const li = document.createElement("li");
-    li.className = "cuenta-item";
-    if (faltan === 0) li.classList.add("cuenta-pagada");
-
-    const cabecera = document.createElement("div");
-    cabecera.className = "cuenta-cabecera";
-    const info = document.createElement("span");
-    info.className = "info-clase";
-    const titulo = document.createElement("strong");
-    titulo.textContent = cuenta.descripcion;
-    const detalle = document.createElement("small");
-    detalle.className = "cuenta-detalle";
-    detalle.textContent = `${pesos(cuenta.total)} ÷ ${cuenta.personas} = ${pesos(cuenta.porPersona)} c/u · ${fechaCorta(
-      cuenta.creada
-    )} · ${faltan === 0 ? "¡Todo saldado!" : `Faltan ${faltan}`}`;
-    info.append(titulo, detalle);
-    cabecera.appendChild(info);
-    cabecera.appendChild(botonAccion("Eliminar", "btn-eliminar", () => eliminarCuenta(docCuenta.id)));
-    li.appendChild(cabecera);
-
-    const listaPersonas = document.createElement("ul");
-    listaPersonas.className = "cuenta-personas";
-    for (const uid of participantes) {
-      const pagado = Boolean(cuenta.pagos?.[uid]);
-      const fila = cruces[`${docCuenta.id}|${uid}`];
-      const nombre = await nombreDe(uid);
-      const renglon = document.createElement("li");
-      const texto = document.createElement("span");
-      texto.className = "info-clase";
-      renglon.appendChild(texto);
-
-      const insignia = (clase, textoInsignia) => {
-        const estado = document.createElement("span");
-        estado.className = `estado-badge ${clase}`;
-        estado.textContent = textoInsignia;
-        renglon.appendChild(estado);
-      };
-
-      if (pagado) {
-        texto.textContent = `${nombre} · ${pesos(cuenta.porPersona)}`;
-        insignia("estado-libre", "Pagó");
-      } else if (fila && fila.restante === 0) {
-        texto.textContent = `${nombre} · cruzado con ${fila.con}`;
-        insignia("estado-desconocido", "Cruzado");
-      } else {
-        const restante = fila ? fila.restante : cuenta.porPersona;
-        texto.textContent = fila?.descontado
-          ? `${nombre} · ${pesos(restante)} (−${pesos(fila.descontado)} por ${fila.con})`
-          : `${nombre} · ${pesos(restante)}`;
-        renglon.appendChild(
-          botonAccion("Ya me pagó", "btn-editar", () => marcarPagadoConCruce(docCuenta.id, uid, nombre, fila))
-        );
-      }
-      listaPersonas.appendChild(renglon);
-    }
-    li.appendChild(listaPersonas);
-    listaMeDeben.appendChild(li);
+  for (const [uid, par] of pares) {
+    const apodo = await nombreDe(uid);
+    pintarPersona(par.neto < 0 ? listaDebo : listaMeDeben, apodo, par);
   }
+
+  if (!listaDebo.children.length) mensajeVacio(listaDebo, "No le debes nada a nadie 🎉");
+  if (!listaMeDeben.children.length) mensajeVacio(listaMeDeben, "Nadie te debe nada por ahora.");
 }
 
 formCuenta.addEventListener("submit", async (evento) => {
