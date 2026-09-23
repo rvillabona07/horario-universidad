@@ -8,7 +8,7 @@ const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sáb
 const FUENTE_EMOJI = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
 
 const URL_FUENTES =
-  "https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Bebas+Neue&family=Nunito:wght@600;800" +
+  "https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=Orbitron:wght@700;900&family=Bebas+Neue&family=Nunito:wght@600;800" +
   "&family=Pacifico&family=Quicksand:wght@500;700&family=Dancing+Script:wght@700" +
   "&family=Special+Elite&family=Black+Ops+One&display=swap";
 const URL_JSPDF = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
@@ -98,6 +98,34 @@ function horaCorta(horaStr) {
 // ---------- Estilos ----------
 
 const ESTILOS = [
+  {
+    id: "neutro",
+    nombre: "Neutro",
+    emoji: "📄",
+    fuenteTitulo: "700 92px Inter",
+    fuenteSubtitulo: "500 36px Inter",
+    fuenteCabecera: "600 30px Inter",
+    fuenteTexto: "Inter",
+    pesoTexto: 600,
+    titulo: "Horario de clases",
+    subtitulo: "Universidad",
+    colorTitulo: "#111827",
+    colorSubtitulo: "#6b7280",
+    cabeceraFondo: ["#f3f4f6"],
+    cabeceraTexto: "#111827",
+    horaFondo: "#f9fafb",
+    horaTexto: "#4b5563",
+    celdaFondo: "#ffffff",
+    celdaBorde: "#e5e7eb",
+    paleta: ["#dbeafe", "#dcfce7", "#fef3c7", "#fee2e2", "#ede9fe", "#e0f2fe"],
+    textoClase: "#1f2937",
+    iconos: [],
+    adornos: [],
+    fondo(ctx) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, ANCHO, ALTO);
+    },
+  },
   {
     id: "espacio",
     nombre: "Espacio",
@@ -607,7 +635,7 @@ export function dibujarHorario(canvas, clases, idEstilo) {
   clases.forEach((clase) => {
     const indiceMateria = materias.indexOf(clase.materia);
     const color = estilo.paleta[indiceMateria % estilo.paleta.length];
-    const icono = estilo.iconos[indiceMateria % estilo.iconos.length];
+    const icono = estilo.iconos.length ? estilo.iconos[indiceMateria % estilo.iconos.length] : null;
     const y1 = yFilas + ((minutos(clase.horaInicio) - horaInicio * 60) / 60) * altoFila + 3;
     const y2 = yFilas + ((minutos(clase.horaFin) - horaInicio * 60) / 60) * altoFila - 3;
     if (y2 <= y1) return;
@@ -629,7 +657,7 @@ export function dibujarHorario(canvas, clases, idEstilo) {
       const altoTexto = dibujarTextoBloque(ctx, estilo, clase, x, y1, w, h);
 
       // El icono va en la esquina solo si no tapa el texto.
-      if (h - altoTexto >= 40 && w >= 200) {
+      if (icono && h - altoTexto >= 40 && w >= 200) {
         ctx.globalAlpha = 0.9;
         emoji(ctx, icono, x + w - 24, y1 + h - 24, 26);
         ctx.globalAlpha = 1;
