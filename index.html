@@ -12,11 +12,16 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="ParchApp" />
   <!-- Al publicar cambios, sube este número (aquí y en script.js abajo) -->
-  <link rel="stylesheet" href="style.css?v=26" />
+  <link rel="stylesheet" href="style.css?v=28" />
 </head>
 <body>
   <header>
-    <h1>📅 ParchApp</h1>
+    <div class="header-titulo">
+      <h1><svg class="icono-calendario" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="5" width="26" height="24" rx="5" fill="#ffffff"/><path d="M3 10a5 5 0 0 1 5-5h16a5 5 0 0 1 5 5v2.5H3z" fill="#ef4444"/><text x="16" y="26.2" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-weight="800" font-size="14" fill="#1f2937">7</text></svg> ParchApp</h1>
+      <button id="btn-compartir-app" type="button" class="btn-icono btn-compartir-app" title="Compartir ParchApp">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 10H6.5A1.5 1.5 0 0 0 5 11.5v8A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-8a1.5 1.5 0 0 0-1.5-1.5H16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
     <div class="header-derecha">
       <button id="btn-colores" type="button" class="btn-icono" title="Personalizar colores">🎨</button>
       <button id="btn-notificaciones" type="button" class="btn-icono" title="Notificaciones">🔔</button>
@@ -186,7 +191,7 @@
     <input type="file" id="input-foto" accept="image/*" capture="environment" hidden />
 
     <div class="tabs-principales">
-      <button type="button" id="tab-horario" class="tab-boton tab-activo">📅 Horario</button>
+      <button type="button" id="tab-horario" class="tab-boton tab-activo"><svg class="icono-calendario" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="5" width="26" height="24" rx="5" fill="#ffffff" stroke="#e5e7eb"/><path d="M3 10a5 5 0 0 1 5-5h16a5 5 0 0 1 5 5v2.5H3z" fill="#ef4444"/><text x="16" y="26.2" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-weight="800" font-size="14" fill="#1f2937">7</text></svg> Horario</button>
       <button type="button" id="tab-amigos" class="tab-boton">👥 Amigos</button>
       <button type="button" id="tab-cuentas" class="tab-boton">💸 Cuentas</button>
     </div>
@@ -360,6 +365,6 @@
     </div>
   </main>
 
-  <script type="module" src="script.js?v=26"></script>
+  <script type="module" src="script.js?v=28"></script>
 </body>
 </html>

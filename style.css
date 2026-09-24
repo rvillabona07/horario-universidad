@@ -806,6 +806,25 @@ header h1 {
   }
 }
 
+.header-titulo {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.icono-calendario {
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.2em;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.15));
+}
+
+.btn-compartir-app svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
 /* ---------- Tarjetas de amigos ---------- */
 
 .lista-items li.tarjeta-amigo {

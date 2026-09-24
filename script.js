@@ -465,6 +465,29 @@ async function revisarNotificacionesAlEntrar() {
   mostrarAvisoNotificaciones(Notification.permission === "denied" ? "bloqueadas" : "pedir");
 }
 
+// ---------- Compartir la app (botón junto al nombre) ----------
+
+const URL_APP_PUBLICA = "https://rvillabona07.github.io/horario-universidad/";
+const btnCompartirApp = document.getElementById("btn-compartir-app");
+
+btnCompartirApp.addEventListener("click", async () => {
+  const texto = "¡Descarga ParchApp! 🗓️ Tu horario, tus amigos y el parche en una sola app:";
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "ParchApp", text: texto, url: URL_APP_PUBLICA });
+    } catch {
+      // Canceló el menú de compartir: no pasa nada.
+    }
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(`${texto} ${URL_APP_PUBLICA}`);
+    alert("¡Enlace copiado! Pégalo en WhatsApp o donde quieras.");
+  } catch {
+    prompt("Copia este enlace para compartir ParchApp:", URL_APP_PUBLICA);
+  }
+});
+
 // ---------- Instalar como app (PWA) ----------
 // En Android/Chrome el navegador nos da el evento "beforeinstallprompt" y
 // con un toque se instala. En iPhone no existe: mostramos los pasos.
@@ -1035,7 +1058,7 @@ btnCompartirEnlace.addEventListener("click", async () => {
   try {
     await navigator.share({
       title: "ParchApp",
-      text: "¡Agrégame en ParchApp! 📅 Toca el enlace y quedamos como amigos al instante:",
+      text: "¡Agrégame en ParchApp! 🗓️ Toca el enlace y quedamos como amigos al instante:",
       url: miEnlace,
     });
   } catch {
