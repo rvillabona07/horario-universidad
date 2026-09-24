@@ -3,20 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mi Horario</title>
+  <title>ParchApp</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#7c3aed" />
   <link rel="icon" type="image/png" href="icono-192.png" />
   <link rel="apple-touch-icon" href="icono-180.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="Mi Horario" />
+  <meta name="apple-mobile-web-app-title" content="ParchApp" />
   <!-- Al publicar cambios, sube este número (aquí y en script.js abajo) -->
-  <link rel="stylesheet" href="style.css?v=15" />
+  <link rel="stylesheet" href="style.css?v=16" />
 </head>
 <body>
   <header>
-    <h1>📅 Mi Horario de Clases</h1>
+    <h1>📅 ParchApp</h1>
     <div class="header-derecha">
       <button id="btn-colores" type="button" class="btn-icono" title="Personalizar colores">🎨</button>
       <button id="btn-notificaciones" type="button" class="btn-icono" title="Activar notificaciones">🔔</button>
@@ -28,7 +28,7 @@
   </header>
 
   <div id="banner-instalar" class="banner-instalar" hidden>
-    <span class="banner-instalar-texto">📲 Instala <strong>Mi Horario</strong> en tu celular y ábrela como una app</span>
+    <span class="banner-instalar-texto">📲 Instala <strong>ParchApp</strong> en tu celular y ábrela como una app</span>
     <button type="button" id="btn-instalar" class="btn-instalar">Instalar</button>
     <button type="button" id="btn-cerrar-banner" class="btn-cerrar-banner" aria-label="Cerrar">×</button>
   </div>
@@ -37,7 +37,7 @@
     <div class="modal-colores modal-instalar">
       <button type="button" id="btn-cerrar-instalar" class="btn-cerrar-modal" title="Cerrar">×</button>
       <div class="modal-notif-icono">📲</div>
-      <h2>Instala Mi Horario</h2>
+      <h2>Instala ParchApp</h2>
       <ol id="pasos-instalar" class="pasos-instalar"></ol>
     </div>
   </div>
@@ -315,6 +315,6 @@
     </div>
   </main>
 
-  <script type="module" src="script.js?v=15"></script>
+  <script type="module" src="script.js?v=16"></script>
 </body>
 </html>

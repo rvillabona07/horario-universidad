@@ -1,0 +1,17 @@
+{
+  "name": "ParchApp",
+  "short_name": "ParchApp",
+  "description": "Tu horario, tus amigos y el parche: mira quién está libre y dividan las cuentas",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f1ff",
+  "theme_color": "#7c3aed",
+  "icons": [
+    { "src": "icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
