@@ -860,7 +860,14 @@ const PESTANAS = [
   { tab: "tab-horario", vista: "vista-horario" },
   { tab: "tab-amigos", vista: "vista-amigos", alAbrir: () => renderAmigos() },
   { tab: "tab-cuentas", vista: "vista-cuentas", alAbrir: () => renderCuentas() },
-  { tab: "tab-chat", vista: "vista-chat", alAbrir: () => refrescarChat() },
+  {
+    tab: "tab-chat",
+    vista: "vista-chat",
+    alAbrir: () => {
+      conversacionAbierta = null; // siempre abre en la bandeja
+      refrescarChat();
+    },
+  },
 ];
 
 PESTANAS.forEach((pestana) => {
@@ -2442,15 +2449,28 @@ document.getElementById("visor-panel-cerrar").addEventListener("click", () => {
 
 // ---------- Pestaña Chat (los mensajes duran 30 min) ----------
 // Los me gusta, comentarios y respuestas de las fotos llegan a la pestaña
-// Chat de la barra de abajo. Cada uno dura 30 minutos desde el último
-// movimiento y después desaparece (check-clases.js los borra de Firebase).
-// El número rojo en el ícono cuenta lo nuevo desde la última vez que se abrió.
+// Chat de la barra de abajo, agrupados por persona como una bandeja de
+// entrada: se ve solo el apodo y al tocarlo se abre la conversación con
+// todo lo de esa persona (de tus fotos y de las suyas). Cada cosa dura
+// 30 minutos desde el último movimiento (check-clases.js la borra).
+// El número rojo en el ícono cuenta las personas con algo sin leer.
 
 const DURACION_CHAT = 30 * 60 * 1000;
 const vistaChat = document.getElementById("vista-chat");
+const chatBandeja = document.getElementById("chat-bandeja");
 const listaChats = document.getElementById("lista-chats");
+const chatConversacion = document.getElementById("chat-conversacion");
+const chatConversacionAvatar = document.getElementById("chat-conversacion-avatar");
+const chatConversacionNombre = document.getElementById("chat-conversacion-nombre");
+const listaConversacion = document.getElementById("lista-conversacion");
 const chatSinLeer = document.getElementById("chat-sin-leer");
 let ultimoRenderChat = 0;
+let conversacionAbierta = null; // uid de la persona, o null = bandeja
+
+document.getElementById("btn-volver-chat").addEventListener("click", () => {
+  conversacionAbierta = null;
+  refrescarChat();
+});
 
 function chatTieneAlgo(chat) {
   return chat.like || chat.comentario;
@@ -2469,58 +2489,161 @@ function chatsParaMi(chats) {
     .sort((a, b) => b.actualizada - a.actualizada);
 }
 
+function otroDelChat(chat) {
+  return chat.autor === usuarioActual.uid ? chat.amigo : chat.autor;
+}
+
+// Junta los chats por persona: [{ uid, chats (más reciente primero), actualizada }]
+function agruparPorPersona(chats) {
+  const grupos = new Map();
+  chats.forEach((c) => {
+    const uid = otroDelChat(c);
+    if (!grupos.has(uid)) grupos.set(uid, { uid, chats: [], actualizada: 0 });
+    const grupo = grupos.get(uid);
+    grupo.chats.push(c);
+    grupo.actualizada = Math.max(grupo.actualizada, c.actualizada);
+  });
+  return [...grupos.values()].sort((a, b) => b.actualizada - a.actualizada);
+}
+
+// "Visto" por persona (en este celular): { uidDelOtro: milisegundos }
 function claveChatVisto() {
-  return `chatVisto_${usuarioActual.uid}`;
+  return `chatVistoPorPersona_${usuarioActual.uid}`;
 }
 
 function leerChatVisto() {
   try {
-    return Number(localStorage.getItem(claveChatVisto())) || 0;
+    return JSON.parse(localStorage.getItem(claveChatVisto())) || {};
   } catch {
-    return 0;
+    return {};
   }
 }
 
-function marcarChatVisto() {
+function marcarPersonaVista(uidOtro) {
+  const vistos = leerChatVisto();
+  vistos[uidOtro] = Date.now();
   try {
-    localStorage.setItem(claveChatVisto(), String(Date.now()));
+    localStorage.setItem(claveChatVisto(), JSON.stringify(vistos));
   } catch {
-    // Sin almacenamiento: el número simplemente no se recuerda.
+    // Sin almacenamiento: el punto de "nuevo" simplemente no se recuerda.
   }
-  chatSinLeer.hidden = true;
 }
 
-function pintarContadorChat(chats) {
-  const visto = leerChatVisto();
-  const nuevos = chats.filter((c) => c.ultimoDe !== usuarioActual.uid && c.actualizada > visto).length;
+function grupoTieneNuevo(grupo, vistos) {
+  const visto = vistos[grupo.uid] || 0;
+  return grupo.chats.some((c) => c.ultimoDe !== usuarioActual.uid && c.actualizada > visto);
+}
+
+function pintarContadorChat(grupos) {
+  const vistos = leerChatVisto();
+  const nuevos = grupos.filter((g) => grupoTieneNuevo(g, vistos)).length;
   chatSinLeer.textContent = nuevos > 9 ? "9+" : String(nuevos);
   chatSinLeer.hidden = nuevos === 0;
 }
 
+function haceCuanto(milisegundos) {
+  const minutos = Math.floor((Date.now() - milisegundos) / 60000);
+  return minutos < 1 ? "ahora" : `hace ${minutos} min`;
+}
+
+// Texto corto de la fila: lo último que pasó con esa persona.
+function vistaPreviaChat(chat) {
+  const esMiFoto = chat.autor === usuarioActual.uid;
+  if (chat.respuesta && chat.ultimoDe === chat.autor) return esMiFoto ? `Tú: ${chat.respuesta}` : chat.respuesta;
+  if (chat.comentario) return esMiFoto ? chat.comentario : `Tú: ${chat.comentario}`;
+  return esMiFoto ? "Le gustó tu foto" : "Te gustó su foto";
+}
+
+function avatarChat(uid, perfil) {
+  const avatar = document.createElement("span");
+  avatar.className = "amigo-avatar";
+  const nombre = perfil.apodo || "Amigo";
+  const sumaLetras = [...uid].reduce((total, letra) => total + letra.charCodeAt(0), 0);
+  avatar.style.background = COLORES_AVATAR[sumaLetras % COLORES_AVATAR.length];
+  avatar.textContent = [...nombre.trim()][0]?.toUpperCase() || "?";
+  if (perfil.avatar) pintarAvatarEn(avatar, perfil.avatar, nombre);
+  return avatar;
+}
+
+function filaPersona(grupo, perfil, nuevo) {
+  const li = document.createElement("li");
+  li.className = nuevo ? "chat-persona chat-persona-nueva" : "chat-persona";
+  li.tabIndex = 0;
+
+  const datos = document.createElement("span");
+  datos.className = "chat-persona-datos";
+  const nombre = document.createElement("strong");
+  nombre.textContent = perfil.apodo || "Amigo";
+  const previa = document.createElement("small");
+  previa.textContent = vistaPreviaChat(grupo.chats[0]);
+  datos.append(nombre, previa);
+
+  const lado = document.createElement("span");
+  lado.className = "chat-persona-lado";
+  const cuando = document.createElement("small");
+  cuando.textContent = haceCuanto(grupo.actualizada);
+  lado.appendChild(cuando);
+  if (nuevo) {
+    const punto = document.createElement("span");
+    punto.className = "chat-punto-nuevo";
+    lado.appendChild(punto);
+  }
+
+  li.append(avatarChat(grupo.uid, perfil), datos, lado);
+  const abrir = () => {
+    conversacionAbierta = grupo.uid;
+    refrescarChat();
+  };
+  li.addEventListener("click", abrir);
+  li.addEventListener("keydown", (evento) => {
+    if (evento.key === "Enter") abrir();
+  });
+  return li;
+}
+
 // Trae los chats, actualiza el número rojo y, si la pestaña está abierta,
-// repinta la lista (salvo que estés escribiendo una respuesta).
+// pinta la bandeja o la conversación abierta (salvo que estés escribiendo).
 async function refrescarChat() {
   if (!usuarioActual) return;
   const idRender = ++ultimoRenderChat;
-  const miUid = usuarioActual.uid;
-  const chats = chatsParaMi(await obtenerMisChats());
+  const grupos = agruparPorPersona(chatsParaMi(await obtenerMisChats()));
   if (idRender !== ultimoRenderChat) return;
 
   if (vistaChat.hidden) {
-    pintarContadorChat(chats);
+    pintarContadorChat(grupos);
     return;
   }
-  marcarChatVisto();
-  if (listaChats.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
+  if (vistaChat.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
 
-  const nombres = await Promise.all(
-    chats.map(async (c) => (await obtenerApodo(c.autor === miUid ? c.amigo : c.autor)) || "Amigo")
+  const grupoAbierto = conversacionAbierta && grupos.find((g) => g.uid === conversacionAbierta);
+  // Si la conversación ya se borró (pasaron los 30 min), vuelve a la bandeja.
+  if (!grupoAbierto) conversacionAbierta = null;
+
+  const perfiles = await Promise.all(
+    (grupoAbierto ? [grupoAbierto] : grupos).map((g) => obtenerPerfil(g.uid))
   );
   if (idRender !== ultimoRenderChat) return;
-  listaChats.replaceChildren(...chats.map((c, i) => tarjetaChat(c, nombres[i])));
-  if (!chats.length) {
-    mensajeVacio(listaChats, "No hay mensajes. Aquí llegan los me gusta y comentarios de las fotos.");
+
+  chatBandeja.hidden = Boolean(grupoAbierto);
+  chatConversacion.hidden = !grupoAbierto;
+
+  if (grupoAbierto) {
+    const perfil = perfiles[0];
+    const nombre = perfil.apodo || "Amigo";
+    chatConversacionAvatar.replaceChildren(avatarChat(grupoAbierto.uid, perfil));
+    chatConversacionNombre.textContent = nombre;
+    // Dentro de la conversación: lo más viejo arriba, como un chat.
+    const enOrden = [...grupoAbierto.chats].sort((a, b) => a.creada - b.creada);
+    listaConversacion.replaceChildren(...enOrden.map((c) => tarjetaChat(c, nombre)));
+    marcarPersonaVista(grupoAbierto.uid);
+  } else {
+    const vistos = leerChatVisto();
+    listaChats.replaceChildren(...grupos.map((g, i) => filaPersona(g, perfiles[i], grupoTieneNuevo(g, vistos))));
+    if (!grupos.length) {
+      mensajeVacio(listaChats, "No hay mensajes. Aquí llegan los me gusta y comentarios de las fotos.");
+    }
   }
+  pintarContadorChat(grupos);
 }
 
 function burbujaChat(texto, mia) {
@@ -2567,7 +2690,7 @@ function tarjetaChat(chat, nombreOtro) {
   const titulo = document.createElement("div");
   titulo.className = "chat-titulo";
   const quien = document.createElement("strong");
-  quien.textContent = esMiFoto ? `${nombreOtro} · tu foto` : `Foto de ${nombreOtro}`;
+  quien.textContent = esMiFoto ? "Tu foto" : `Foto de ${nombreOtro}`;
   const cuando = document.createElement("small");
   const minutos = Math.max(1, Math.ceil((chat.actualizada + DURACION_CHAT - Date.now()) / 60000));
   cuando.textContent = `se borra en ${minutos} min`;
@@ -2583,7 +2706,7 @@ function tarjetaChat(chat, nombreOtro) {
   if (chat.like) {
     const like = document.createElement("p");
     like.className = "chat-like";
-    like.textContent = esMiFoto ? `❤️ A ${nombreOtro} le gustó tu foto` : "❤️ Te gustó esta foto";
+    like.textContent = esMiFoto ? "❤️ Le gustó tu foto" : "❤️ Te gustó esta foto";
     cuerpo.appendChild(like);
   }
   if (chat.comentario) cuerpo.appendChild(burbujaChat(chat.comentario, !esMiFoto));
@@ -2609,7 +2732,7 @@ function tarjetaChat(chat, nombreOtro) {
   } else if (!esMiFoto && chat.comentario && !chat.respuesta) {
     const espera = document.createElement("small");
     espera.className = "chat-espera";
-    espera.textContent = `Esperando la respuesta de ${nombreOtro}`;
+    espera.textContent = "Esperando su respuesta";
     cuerpo.appendChild(espera);
   }
 
@@ -2631,6 +2754,8 @@ function detenerFotos() {
   clearInterval(temporizadorFotos);
   barraFotos.innerHTML = "";
   listaChats.innerHTML = "";
+  listaConversacion.innerHTML = "";
+  conversacionAbierta = null;
   chatSinLeer.hidden = true;
   cerrarVisor();
 }
