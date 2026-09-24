@@ -12,14 +12,14 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="ParchApp" />
   <!-- Al publicar cambios, sube este número (aquí y en script.js abajo) -->
-  <link rel="stylesheet" href="style.css?v=19" />
+  <link rel="stylesheet" href="style.css?v=22" />
 </head>
 <body>
   <header>
     <h1>📅 ParchApp</h1>
     <div class="header-derecha">
       <button id="btn-colores" type="button" class="btn-icono" title="Personalizar colores">🎨</button>
-      <button id="btn-notificaciones" type="button" class="btn-icono" title="Activar notificaciones">🔔</button>
+      <button id="btn-notificaciones" type="button" class="btn-icono" title="Notificaciones">🔔</button>
       <div id="usuario-info" class="usuario-info" hidden>
         <button id="usuario-email" type="button" title="Cambiar tu apodo"></button>
         <button id="btn-logout" type="button">Cerrar sesión</button>
@@ -79,6 +79,57 @@
     </div>
   </div>
 
+  <div id="modal-ajustes-notif" class="modal-overlay" hidden>
+    <div class="modal-colores modal-ajustes-notif">
+      <button type="button" id="btn-cerrar-ajustes-notif" class="btn-cerrar-modal" title="Cerrar">×</button>
+      <h2>🔔 Notificaciones</h2>
+      <p id="estado-notif" class="estado-notif"></p>
+      <button type="button" id="btn-activar-desde-ajustes" class="btn-notif-activar" hidden>Activar en este celular</button>
+      <p class="modal-colores-subtexto">Elige qué avisos quieres recibir:</p>
+      <div id="lista-ajustes-notif" class="lista-ajustes-notif"></div>
+    </div>
+  </div>
+
+  <div id="modal-foto-salida" class="modal-overlay" hidden>
+    <div class="modal-colores modal-notificaciones">
+      <div class="modal-notif-icono">📸</div>
+      <h2>¡Saliste de clase!</h2>
+      <p class="modal-colores-subtexto">Toma una foto de dónde estás. Tus amigos la verán por 10 minutos.</p>
+      <div class="notif-botones">
+        <button type="button" id="btn-foto-salida" class="btn-notif-activar">Tomar foto</button>
+        <button type="button" id="btn-foto-salida-luego" class="btn-notif-luego">Ahora no</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-foto-preview" class="modal-overlay" hidden>
+    <div class="modal-colores modal-foto-preview">
+      <button type="button" id="btn-cerrar-foto-preview" class="btn-cerrar-modal" title="Cerrar">×</button>
+      <h2>Compartir foto</h2>
+      <img id="img-foto-preview" class="img-foto-preview" alt="Tu foto" />
+      <input type="text" id="texto-foto" class="texto-foto" placeholder="¿Dónde estás? (opcional)" maxlength="60" />
+      <p class="modal-colores-subtexto">La verán tus amigos y desaparece en 10 minutos.</p>
+      <div class="notif-botones">
+        <button type="button" id="btn-publicar-foto" class="btn-notif-activar">Compartir</button>
+        <button type="button" id="btn-otra-foto" class="btn-notif-luego">Tomar otra</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="visor-foto" class="visor-foto" hidden>
+    <div class="visor-progreso"><span id="visor-barra"></span></div>
+    <div class="visor-cabecera">
+      <div>
+        <strong id="visor-nombre"></strong>
+        <small id="visor-tiempo"></small>
+      </div>
+      <button type="button" id="visor-borrar" class="visor-borrar" hidden>Borrar</button>
+      <button type="button" id="visor-cerrar" class="visor-cerrar" aria-label="Cerrar">×</button>
+    </div>
+    <img id="visor-imagen" class="visor-imagen" alt="" />
+    <p id="visor-texto" class="visor-texto" hidden></p>
+  </div>
+
   <div id="modal-horario-amigo" class="modal-overlay" hidden>
     <div class="modal-colores modal-horario-amigo">
       <button type="button" id="btn-cerrar-horario-amigo" class="btn-cerrar-modal" title="Cerrar">×</button>
@@ -129,6 +180,9 @@
   </div>
 
   <main id="app-main" hidden>
+    <div id="barra-fotos" class="barra-fotos"></div>
+    <input type="file" id="input-foto" accept="image/*" capture="environment" hidden />
+
     <div class="tabs-principales">
       <button type="button" id="tab-horario" class="tab-boton tab-activo">📅 Horario</button>
       <button type="button" id="tab-amigos" class="tab-boton">👥 Amigos</button>
@@ -307,6 +361,6 @@
     </div>
   </main>
 
-  <script type="module" src="script.js?v=19"></script>
+  <script type="module" src="script.js?v=22"></script>
 </body>
 </html>

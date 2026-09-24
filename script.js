@@ -209,12 +209,15 @@ if ("Notification" in window && "serviceWorker" in navigator) {
   // lo mostramos nosotros; nunca llegan a los dos, no se duplica.
   onMessage(messaging, async (payload) => {
     if (!payload.data || !payload.data.title) return;
+    // Con la app abierta, los avisos de fotos actúan directamente.
+    if (payload.data.url) manejarAccionDeNotificacion(payload.data.url);
     try {
       const registro = await navigator.serviceWorker.getRegistration("firebase-messaging-sw.js");
+      const opciones = { body: payload.data.body || "", data: { url: payload.data.url || "./" } };
       if (registro) {
-        registro.showNotification(payload.data.title, { body: payload.data.body || "" });
+        registro.showNotification(payload.data.title, opciones);
       } else {
-        new Notification(payload.data.title, { body: payload.data.body || "" });
+        new Notification(payload.data.title, opciones);
       }
     } catch (error) {
       console.error("No se pudo mostrar el aviso:", error);
@@ -254,21 +257,106 @@ async function activarNotificaciones() {
 
 const MENSAJE_ACTIVADAS = "¡Listo! Te avisaremos antes de cada clase, cuando tus amigos salgan y cuando te dividan una cuenta.";
 
-btnNotificaciones.addEventListener("click", async () => {
+// ---------- Ajustes de notificaciones (🔔) ----------
+// Cada quien elige qué avisos recibe. Se guarda en horarios/{uid}.preferencias
+// y lo respetan check-clases.js y el servidor de avisos.
+
+const modalAjustesNotif = document.getElementById("modal-ajustes-notif");
+const estadoNotif = document.getElementById("estado-notif");
+const btnActivarDesdeAjustes = document.getElementById("btn-activar-desde-ajustes");
+const listaAjustesNotif = document.getElementById("lista-ajustes-notif");
+
+const TIPOS_AVISO = [
+  { id: "clases", icono: "⏰", titulo: "Clases por empezar", detalle: "5 minutos antes de cada clase" },
+  { id: "amigos", icono: "🎉", titulo: "Amigos que salen de clase", detalle: "Solo cuando los dos tienen un hueco" },
+  { id: "fotos", icono: "📸", titulo: "Fotos", detalle: "Invitación a subir foto al salir y fotos de tus amigos" },
+  { id: "cuentas", icono: "💸", titulo: "Cuentas y pagos", detalle: "Cuando te dividen una cuenta o te confirman un pago" },
+];
+
+function pintarEstadoNotificaciones() {
+  const activas = messaging && Notification.permission === "granted";
+  btnActivarDesdeAjustes.hidden = true;
+  if (activas) {
+    estadoNotif.textContent = "✅ Activadas en este celular";
+  } else if (!messaging) {
+    estadoNotif.textContent = esIphoneSinInstalar()
+      ? "📲 En iPhone primero instala ParchApp (botón «Instalar» de arriba)."
+      : "Este navegador no permite notificaciones. Prueba en Chrome.";
+  } else if (Notification.permission === "denied") {
+    estadoNotif.textContent = "🚫 Bloqueadas. Permítelas desde el candado 🔒 del navegador.";
+  } else {
+    estadoNotif.textContent = "Todavía no están activadas en este celular.";
+    btnActivarDesdeAjustes.hidden = false;
+  }
+}
+
+async function abrirAjustesNotificaciones() {
+  pintarEstadoNotificaciones();
+  listaAjustesNotif.innerHTML = "";
+  modalAjustesNotif.hidden = false;
+
+  let preferencias = {};
+  try {
+    const snapshot = await getDoc(doc(db, "horarios", usuarioActual.uid));
+    preferencias = (snapshot.exists() && snapshot.data().preferencias) || {};
+  } catch (error) {
+    console.error(error);
+  }
+
+  TIPOS_AVISO.forEach((tipo) => {
+    const fila = document.createElement("label");
+    fila.className = "ajuste-notif";
+    const texto = document.createElement("span");
+    texto.className = "ajuste-notif-texto";
+    const titulo = document.createElement("strong");
+    titulo.textContent = `${tipo.icono} ${tipo.titulo}`;
+    const detalle = document.createElement("small");
+    detalle.textContent = tipo.detalle;
+    texto.append(titulo, detalle);
+
+    const interruptor = document.createElement("input");
+    interruptor.type = "checkbox";
+    interruptor.className = "interruptor";
+    interruptor.checked = preferencias[tipo.id] !== false;
+    interruptor.addEventListener("change", async () => {
+      try {
+        await setDoc(
+          doc(db, "horarios", usuarioActual.uid),
+          { preferencias: { [tipo.id]: interruptor.checked } },
+          { merge: true }
+        );
+      } catch (error) {
+        console.error(error);
+        interruptor.checked = !interruptor.checked;
+        alert("No se pudo guardar. Intenta de nuevo.");
+      }
+    });
+
+    fila.append(texto, interruptor);
+    listaAjustesNotif.appendChild(fila);
+  });
+}
+
+btnNotificaciones.addEventListener("click", () => {
   if (!usuarioActual) {
-    alert("Inicia sesión primero para activar las notificaciones.");
+    alert("Inicia sesión primero para configurar las notificaciones.");
     return;
   }
+  abrirAjustesNotificaciones();
+});
 
-  if (!messaging) {
-    mostrarAvisoNotificaciones(esIphoneSinInstalar() ? "iphone" : "sin-soporte");
-    return;
-  }
-
+btnActivarDesdeAjustes.addEventListener("click", async () => {
   const resultado = await activarNotificaciones();
-  if (resultado === "ok") alert(MENSAJE_ACTIVADAS);
-  else if (resultado === "negado") mostrarAvisoNotificaciones("bloqueadas");
-  else alert("No se pudo activar la notificación. Intenta de nuevo.");
+  if (resultado === "error") alert("No se pudo activar la notificación. Intenta de nuevo.");
+  pintarEstadoNotificaciones();
+});
+
+document.getElementById("btn-cerrar-ajustes-notif").addEventListener("click", () => {
+  modalAjustesNotif.hidden = true;
+});
+
+modalAjustesNotif.addEventListener("click", (evento) => {
+  if (evento.target === modalAjustesNotif) modalAjustesNotif.hidden = true;
 });
 
 // ---------- Aviso para activar notificaciones al entrar ----------
@@ -685,7 +773,13 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("auth-invitacion").hidden = true;
     await procesarInvitacionPendiente();
     revisarNotificacionesAlEntrar();
+    iniciarFotos();
+    if (accionPendiente) {
+      manejarAccionDeNotificacion(accionPendiente);
+      accionPendiente = null;
+    }
   } else {
+    detenerFotos();
     miEnlace = "";
     miEnlaceEl.textContent = "Cargando tu enlace…";
     appMain.hidden = true;
@@ -1534,6 +1628,301 @@ formCuenta.addEventListener("submit", async (evento) => {
     btnCrearCuenta.disabled = false;
   }
 });
+
+// ---------- Fotos instantáneas (duran 10 minutos) ----------
+// Se guardan comprimidas dentro de Firestore (colección "fotos"), visibles
+// solo para los amigos del autor. La app oculta las vencidas y
+// check-clases.js las borra en su siguiente revisión.
+
+const DURACION_FOTO = 10 * 60 * 1000;
+const barraFotos = document.getElementById("barra-fotos");
+const inputFoto = document.getElementById("input-foto");
+const modalFotoSalida = document.getElementById("modal-foto-salida");
+const modalFotoPreview = document.getElementById("modal-foto-preview");
+const imgFotoPreview = document.getElementById("img-foto-preview");
+const textoFoto = document.getElementById("texto-foto");
+const btnPublicarFoto = document.getElementById("btn-publicar-foto");
+const visorFoto = document.getElementById("visor-foto");
+const visorImagen = document.getElementById("visor-imagen");
+const visorNombre = document.getElementById("visor-nombre");
+const visorTiempo = document.getElementById("visor-tiempo");
+const visorTexto = document.getElementById("visor-texto");
+const visorBorrar = document.getElementById("visor-borrar");
+const visorBarra = document.getElementById("visor-barra");
+
+let fotoLista = null; // foto comprimida esperando a publicarse
+let temporizadorFotos = null;
+
+function abrirCamara() {
+  inputFoto.value = "";
+  inputFoto.click();
+}
+
+function cargarImagen(archivo) {
+  return new Promise((listo, fallo) => {
+    const url = URL.createObjectURL(archivo);
+    const imagen = new Image();
+    imagen.onload = () => {
+      URL.revokeObjectURL(url);
+      listo(imagen);
+    };
+    imagen.onerror = () => {
+      URL.revokeObjectURL(url);
+      fallo(new Error("No se pudo leer la foto"));
+    };
+    imagen.src = url;
+  });
+}
+
+// Reduce la foto a 1080 px y la comprime hasta que quepa en un documento
+// de Firestore (límite 1 MB; dejamos margen).
+async function comprimirFoto(archivo) {
+  const imagen = await cargarImagen(archivo);
+  const escala = Math.min(1, 1080 / Math.max(imagen.width, imagen.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(imagen.width * escala);
+  canvas.height = Math.round(imagen.height * escala);
+  canvas.getContext("2d").drawImage(imagen, 0, 0, canvas.width, canvas.height);
+
+  for (const calidad of [0.75, 0.6, 0.45, 0.3]) {
+    const datos = canvas.toDataURL("image/jpeg", calidad);
+    if (datos.length < 800000) return datos;
+  }
+  throw new Error("La foto es demasiado pesada");
+}
+
+inputFoto.addEventListener("change", async () => {
+  const archivo = inputFoto.files[0];
+  if (!archivo) return;
+  try {
+    fotoLista = await comprimirFoto(archivo);
+    imgFotoPreview.src = fotoLista;
+    textoFoto.value = "";
+    modalFotoSalida.hidden = true;
+    modalFotoPreview.hidden = false;
+  } catch (error) {
+    console.error(error);
+    alert("No se pudo procesar la foto. Intenta con otra.");
+  }
+});
+
+document.getElementById("btn-otra-foto").addEventListener("click", abrirCamara);
+document.getElementById("btn-cerrar-foto-preview").addEventListener("click", () => {
+  modalFotoPreview.hidden = true;
+  fotoLista = null;
+});
+document.getElementById("btn-foto-salida").addEventListener("click", abrirCamara);
+document.getElementById("btn-foto-salida-luego").addEventListener("click", () => {
+  modalFotoSalida.hidden = true;
+});
+
+btnPublicarFoto.addEventListener("click", async () => {
+  if (!fotoLista) return;
+  btnPublicarFoto.disabled = true;
+  btnPublicarFoto.textContent = "Compartiendo…";
+  try {
+    const amigos = await obtenerAmigos();
+    if (amigos.length === 0) {
+      alert("Primero agrega amigos (pestaña Amigos) para que puedan ver tus fotos.");
+      return;
+    }
+    const ahora = Date.now();
+    const nuevaFoto = await addDoc(collection(db, "fotos"), {
+      autor: usuarioActual.uid,
+      imagen: fotoLista,
+      texto: textoFoto.value.trim(),
+      creada: ahora,
+      expira: ahora + DURACION_FOTO,
+      visibles: amigos.map((a) => a.uid),
+      notificado: false,
+    });
+    avisarAlInstante("avisar-foto", { idFoto: nuevaFoto.id });
+    modalFotoPreview.hidden = true;
+    fotoLista = null;
+    cargarFotos();
+  } catch (error) {
+    console.error(error);
+    alert(
+      error.code === "permission-denied"
+        ? "Firebase no dio permiso. Revisa que las reglas de 'fotos' estén publicadas."
+        : "No se pudo compartir la foto. Intenta de nuevo."
+    );
+  } finally {
+    btnPublicarFoto.disabled = false;
+    btnPublicarFoto.textContent = "Compartir";
+  }
+});
+
+function minutosRestantes(foto) {
+  return Math.max(1, Math.ceil((foto.expira - Date.now()) / 60000));
+}
+
+function burbujaFoto({ nombre, miniatura, alTocar, esBoton = false }) {
+  const boton = document.createElement("button");
+  boton.type = "button";
+  boton.className = esBoton ? "foto-burbuja foto-burbuja-subir" : "foto-burbuja";
+  const anillo = document.createElement("span");
+  anillo.className = "foto-anillo";
+  const mini = document.createElement("span");
+  mini.className = "foto-mini";
+  if (miniatura) mini.style.backgroundImage = `url("${miniatura}")`;
+  else mini.textContent = "📸";
+  anillo.appendChild(mini);
+  const etiqueta = document.createElement("span");
+  etiqueta.className = "foto-nombre";
+  etiqueta.textContent = nombre;
+  boton.append(anillo, etiqueta);
+  boton.addEventListener("click", alTocar);
+  return boton;
+}
+
+async function cargarFotos() {
+  if (!usuarioActual) return;
+  const miUid = usuarioActual.uid;
+  let documentos = [];
+  try {
+    const [mias, deAmigos] = await Promise.all([
+      getDocs(query(collection(db, "fotos"), where("autor", "==", miUid))),
+      getDocs(query(collection(db, "fotos"), where("visibles", "array-contains", miUid))),
+    ]);
+    documentos = [...mias.docs, ...deAmigos.docs];
+  } catch (error) {
+    console.error("No se pudieron cargar las fotos:", error);
+  }
+
+  const ahora = Date.now();
+  const porAutor = new Map();
+  documentos.forEach((d) => {
+    const foto = { id: d.id, ...d.data() };
+    if (foto.expira <= ahora) return;
+    if (!porAutor.has(foto.autor)) porAutor.set(foto.autor, []);
+    porAutor.get(foto.autor).push(foto);
+  });
+  porAutor.forEach((fotos) => fotos.sort((a, b) => a.creada - b.creada));
+
+  barraFotos.innerHTML = "";
+  barraFotos.appendChild(burbujaFoto({ nombre: "Subir foto", alTocar: abrirCamara, esBoton: true }));
+
+  const autores = [...porAutor.keys()].sort((a, b) => (a === miUid ? -1 : b === miUid ? 1 : 0));
+  for (const autor of autores) {
+    const fotos = porAutor.get(autor);
+    const nombre = autor === miUid ? "Tú" : (await obtenerApodo(autor)) || "Amigo";
+    barraFotos.appendChild(
+      burbujaFoto({
+        nombre,
+        miniatura: fotos[fotos.length - 1].imagen,
+        alTocar: () => abrirVisor(fotos, nombre, autor === miUid),
+      })
+    );
+  }
+}
+
+// ---------- Visor en pantalla completa ----------
+
+let visorFotos = [];
+let visorIndice = 0;
+let visorTemporizador = null;
+const SEGUNDOS_POR_FOTO = 6;
+
+function mostrarFotoVisor() {
+  const foto = visorFotos[visorIndice];
+  if (!foto || foto.expira <= Date.now()) {
+    cerrarVisor();
+    return;
+  }
+  visorImagen.src = foto.imagen;
+  visorTexto.textContent = foto.texto || "";
+  visorTexto.hidden = !foto.texto;
+  const hace = Math.max(0, Math.floor((Date.now() - foto.creada) / 60000));
+  visorTiempo.textContent = `${hace === 0 ? "ahora" : `hace ${hace} min`} · se borra en ${minutosRestantes(foto)} min`;
+
+  // Reinicia la barrita de progreso.
+  visorBarra.style.transition = "none";
+  visorBarra.style.width = "0%";
+  requestAnimationFrame(() => {
+    visorBarra.style.transition = `width ${SEGUNDOS_POR_FOTO}s linear`;
+    visorBarra.style.width = "100%";
+  });
+  clearTimeout(visorTemporizador);
+  visorTemporizador = setTimeout(siguienteFoto, SEGUNDOS_POR_FOTO * 1000);
+}
+
+function abrirVisor(fotos, nombre, esMia) {
+  visorFotos = fotos;
+  visorIndice = 0;
+  visorNombre.textContent = nombre;
+  visorBorrar.hidden = !esMia;
+  visorFoto.hidden = false;
+  mostrarFotoVisor();
+}
+
+function siguienteFoto() {
+  visorIndice++;
+  if (visorIndice >= visorFotos.length) cerrarVisor();
+  else mostrarFotoVisor();
+}
+
+function cerrarVisor() {
+  clearTimeout(visorTemporizador);
+  visorFoto.hidden = true;
+  visorImagen.removeAttribute("src");
+}
+
+visorImagen.addEventListener("click", siguienteFoto);
+document.getElementById("visor-cerrar").addEventListener("click", cerrarVisor);
+visorBorrar.addEventListener("click", async () => {
+  const foto = visorFotos[visorIndice];
+  if (!foto || !confirm("¿Borrar esta foto? Tus amigos dejarán de verla.")) return;
+  try {
+    await deleteDoc(doc(db, "fotos", foto.id));
+  } catch (error) {
+    console.error(error);
+    alert("No se pudo borrar. Intenta de nuevo.");
+  }
+  cerrarVisor();
+  cargarFotos();
+});
+
+function iniciarFotos() {
+  cargarFotos();
+  clearInterval(temporizadorFotos);
+  temporizadorFotos = setInterval(cargarFotos, 60 * 1000);
+}
+
+function detenerFotos() {
+  clearInterval(temporizadorFotos);
+  barraFotos.innerHTML = "";
+  cerrarVisor();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && usuarioActual) cargarFotos();
+});
+
+// Qué hacer cuando la app se abre desde una notificación (por la URL o
+// por un mensaje del service worker si ya estaba abierta).
+function manejarAccionDeNotificacion(url) {
+  if (!url) return;
+  if (url.includes("foto=1")) modalFotoSalida.hidden = false;
+  if (url.includes("ver=fotos")) cargarFotos();
+}
+
+let accionPendiente = null;
+(function leerAccionDeLaUrl() {
+  const parametros = new URLSearchParams(location.search);
+  if (!parametros.has("foto") && !parametros.has("ver")) return;
+  accionPendiente = parametros.has("foto") ? "foto=1" : "ver=fotos";
+  parametros.delete("foto");
+  parametros.delete("ver");
+  const resto = parametros.toString();
+  history.replaceState(null, "", location.pathname + (resto ? `?${resto}` : "") + location.hash);
+})();
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", (evento) => {
+    if (evento.data?.tipo === "notificacion") manejarAccionDeNotificacion(evento.data.url);
+  });
+}
 
 function minutosDesde(horaStr) {
   const [h, m] = horaStr.split(":").map(Number);
