@@ -806,6 +806,104 @@ header h1 {
   }
 }
 
+/* ---------- Tarjetas de amigos ---------- */
+
+.lista-items li.tarjeta-amigo {
+  flex-direction: column;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.amigo-cabecera {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0.75rem;
+}
+
+.amigo-avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+
+.amigo-datos {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.amigo-datos strong {
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amigo-estado {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.amigo-estado::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+
+.amigo-estado.libre {
+  color: #15803d;
+}
+
+.amigo-estado.libre::before {
+  background: #22c55e;
+}
+
+.amigo-estado.en-clase {
+  color: #be123c;
+}
+
+.amigo-estado.en-clase::before {
+  background: #f43f5e;
+}
+
+.lista-items .amigo-cabecera .btn-ver-horario {
+  flex-shrink: 0;
+  padding: 0.45rem 0.8rem;
+}
+
+.amigo-permiso {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  background: #faf7ff;
+  border-top: 1px solid var(--color-borde);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #4b5563;
+  cursor: pointer;
+}
+
 .pista-editar {
   margin: 0 0 -0.8rem;
   font-size: 0.78rem;

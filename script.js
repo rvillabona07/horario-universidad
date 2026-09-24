@@ -1057,12 +1057,6 @@ async function obtenerEstadoAmigo(uid) {
   }
 }
 
-function badgeEstado(estado) {
-  if (estado === "Libre") return `<span class="estado-badge estado-libre">Libre</span>`;
-  if (estado === "En clase") return `<span class="estado-badge estado-clase">En clase</span>`;
-  return `<span class="estado-badge estado-desconocido">Sin datos</span>`;
-}
-
 function amigosDesdeSolicitudes(snapshotDestino, snapshotOrigen) {
   const uids = new Set([
     ...snapshotDestino.docs.filter((d) => d.data().estado === "aceptada").map((d) => d.data().de),
@@ -1170,41 +1164,63 @@ async function renderAmigos() {
       obtenerHorarioDeAmigo(amigo.uid),
     ]);
     const nombre = apodo || "Amigo sin apodo";
-    const li = document.createElement("li");
-
-    const info = document.createElement("span");
-    info.className = "info-clase";
-    info.textContent = nombre;
-
-    li.appendChild(info);
-    li.insertAdjacentHTML("beforeend", badgeEstado(estado));
-
-    const acciones = document.createElement("span");
-    acciones.className = "acciones-clase acciones-amigo";
-
-    const etiquetaCompartir = document.createElement("label");
-    etiquetaCompartir.className = "switch-compartir";
-    etiquetaCompartir.title = "Elige si este amigo puede ver tu horario";
-    const casilla = document.createElement("input");
-    casilla.type = "checkbox";
-    casilla.checked = misPermitidos.includes(amigo.uid);
-    casilla.addEventListener("change", () => cambiarPermiso(amigo.uid, casilla));
-    etiquetaCompartir.appendChild(casilla);
-    etiquetaCompartir.appendChild(document.createTextNode(" Ve mi horario"));
-    acciones.appendChild(etiquetaCompartir);
-
-    if (clasesAmigo) {
-      const btnVer = document.createElement("button");
-      btnVer.type = "button";
-      btnVer.className = "btn-ver-horario";
-      btnVer.textContent = "Ver horario";
-      btnVer.addEventListener("click", () => abrirHorarioAmigo(nombre, clasesAmigo));
-      acciones.appendChild(btnVer);
-    }
-
-    li.appendChild(acciones);
-    listaAmigos.appendChild(li);
+    listaAmigos.appendChild(
+      tarjetaAmigo(amigo.uid, nombre, estado, clasesAmigo, misPermitidos.includes(amigo.uid))
+    );
   }
+}
+
+const COLORES_AVATAR = ["#8b5cf6", "#ec4899", "#3b82f6", "#10b981", "#f97316", "#0ea5e9", "#d946ef", "#eab308"];
+
+// Tarjeta de un amigo: arriba quién es y cómo está (+ Ver horario);
+// abajo, separado, si puede ver tu horario.
+function tarjetaAmigo(uid, nombre, estado, clasesAmigo, puedeVerMiHorario) {
+  const li = document.createElement("li");
+  li.className = "tarjeta-amigo";
+
+  const cabecera = document.createElement("div");
+  cabecera.className = "amigo-cabecera";
+
+  const avatar = document.createElement("span");
+  avatar.className = "amigo-avatar";
+  const sumaLetras = [...uid].reduce((total, letra) => total + letra.charCodeAt(0), 0);
+  avatar.style.background = COLORES_AVATAR[sumaLetras % COLORES_AVATAR.length];
+  avatar.textContent = [...nombre.trim()][0]?.toUpperCase() || "?";
+
+  const datos = document.createElement("span");
+  datos.className = "amigo-datos";
+  const nombreEl = document.createElement("strong");
+  nombreEl.textContent = nombre;
+  const estadoEl = document.createElement("small");
+  estadoEl.className =
+    estado === "Libre" ? "amigo-estado libre" : estado === "En clase" ? "amigo-estado en-clase" : "amigo-estado";
+  estadoEl.textContent = estado === "Libre" || estado === "En clase" ? estado : "Sin datos";
+  datos.append(nombreEl, estadoEl);
+
+  cabecera.append(avatar, datos);
+
+  if (clasesAmigo) {
+    const btnVer = document.createElement("button");
+    btnVer.type = "button";
+    btnVer.className = "btn-ver-horario";
+    btnVer.textContent = "Ver horario";
+    btnVer.addEventListener("click", () => abrirHorarioAmigo(nombre, clasesAmigo));
+    cabecera.appendChild(btnVer);
+  }
+
+  const permiso = document.createElement("label");
+  permiso.className = "amigo-permiso";
+  const textoPermiso = document.createElement("span");
+  textoPermiso.textContent = "Puede ver mi horario";
+  const interruptor = document.createElement("input");
+  interruptor.type = "checkbox";
+  interruptor.className = "interruptor";
+  interruptor.checked = puedeVerMiHorario;
+  interruptor.addEventListener("change", () => cambiarPermiso(uid, interruptor));
+  permiso.append(textoPermiso, interruptor);
+
+  li.append(cabecera, permiso);
+  return li;
 }
 
 // ---------- Compartir horario con amigos elegidos ----------
