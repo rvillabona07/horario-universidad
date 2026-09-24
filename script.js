@@ -76,9 +76,9 @@ auth.languageCode = "es"; // correos de Firebase (p. ej. recuperar contraseña) 
 const db = getFirestore(firebaseApp);
 
 const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
-const HORA_INICIO_GRID = 7; // 07:00
+const HORA_INICIO_GRID = 7; // 07:00 (se amplía a 06:00 si hay clases tempranas)
+const HORA_MINIMA_CLASE = 6; // 06:00, lo más temprano que deja el formulario
 const HORA_FIN_GRID = 22; // 22:00
-const FILAS_TOTALES = (HORA_FIN_GRID - HORA_INICIO_GRID) * 2; // bloques de 30 min
 
 const TEMAS_COLOR = [
   {
@@ -833,6 +833,7 @@ onAuthStateChanged(auth, async (user) => {
     publicarHorarioCompartido();
     document.getElementById("auth-invitacion").hidden = true;
     await procesarInvitacionPendiente();
+    sincronizarPermitidosAlEntrar();
     revisarNotificacionesAlEntrar();
     iniciarFotos();
     if (accionPendiente) {
@@ -1047,7 +1048,30 @@ const btnCopiarEnlace = document.getElementById("btn-copiar-enlace");
 const seccionSolicitudes = document.getElementById("seccion-solicitudes");
 const listaSolicitudes = document.getElementById("lista-solicitudes");
 const listaAmigos = document.getElementById("lista-amigos");
+const listaBloqueados = document.getElementById("lista-bloqueados");
+const subpestanaAmigos = document.getElementById("subpestana-amigos");
+const subpestanaBloqueados = document.getElementById("subpestana-bloqueados");
+const contadorAmigos = document.getElementById("contador-amigos");
+const contadorBloqueados = document.getElementById("contador-bloqueados");
+const amigosSubtexto = document.getElementById("amigos-subtexto");
 let miEnlace = "";
+let ultimoRenderAmigos = 0;
+let datosAmigos = [];
+let misBloqueados = new Set();
+
+// Pestañas "Amigos" / "Bloqueados" dentro de Mis amigos.
+function mostrarSubpestana(bloqueados) {
+  subpestanaAmigos.classList.toggle("subpestana-activa", !bloqueados);
+  subpestanaBloqueados.classList.toggle("subpestana-activa", bloqueados);
+  listaAmigos.hidden = bloqueados;
+  listaBloqueados.hidden = !bloqueados;
+  amigosSubtexto.textContent = bloqueados
+    ? "Estos amigos no pueden ver tu horario"
+    : "Todos tus amigos pueden ver tu horario, menos los que bloquees";
+}
+
+subpestanaAmigos.addEventListener("click", () => mostrarSubpestana(false));
+subpestanaBloqueados.addEventListener("click", () => mostrarSubpestana(true));
 
 async function copiarEnlace() {
   try {
@@ -1118,6 +1142,7 @@ async function obtenerAmigos() {
 }
 
 async function renderAmigos() {
+  const idRender = ++ultimoRenderAmigos;
   if (!miEnlace) {
     try {
       miEnlace = enlaceDeInvitacion(await asegurarEnlacePropio());
@@ -1154,6 +1179,7 @@ async function renderAmigos() {
     for (const docSnap of pendientesRecibidas) {
       const solicitud = docSnap.data();
       const apodo = await obtenerApodo(solicitud.de);
+      if (idRender !== ultimoRenderAmigos) return;
       const li = document.createElement("li");
 
       const info = document.createElement("span");
@@ -1181,37 +1207,52 @@ async function renderAmigos() {
     }
   }
 
-  listaAmigos.innerHTML = "";
   const amigosAceptados = amigosDesdeSolicitudes(snapshotDestino, snapshotOrigen);
+  const [datos, bloqueados] = await Promise.all([
+    Promise.all(
+      amigosAceptados.map(async (amigo) => {
+        const [estado, perfil, clasesAmigo] = await Promise.all([
+          obtenerEstadoAmigo(amigo.uid),
+          obtenerPerfil(amigo.uid),
+          obtenerHorarioDeAmigo(amigo.uid),
+        ]);
+        return { uid: amigo.uid, nombre: perfil.apodo || "Amigo sin apodo", estado, clasesAmigo, avatar: perfil.avatar };
+      })
+    ),
+    sincronizarPermitidos(amigosAceptados.map((a) => a.uid)),
+  ]);
 
-  if (amigosAceptados.length === 0) {
-    const vacio = document.createElement("li");
-    vacio.className = "mensaje-vacio";
-    vacio.textContent = "Todavía no tienes amigos agregados.";
-    listaAmigos.appendChild(vacio);
-    return;
-  }
+  // Si mientras cargábamos arrancó otro renderAmigos (ej. tocaste la pestaña
+  // dos veces), este se descarta: antes ambos pintaban y salían repetidos.
+  if (idRender !== ultimoRenderAmigos) return;
+  datosAmigos = datos.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  misBloqueados = bloqueados;
+  pintarListasAmigos();
+}
 
-  const misPermitidos = await obtenerMisPermitidos();
+function pintarListasAmigos() {
+  const visibles = datosAmigos.filter((a) => !misBloqueados.has(a.uid));
+  const ocultos = datosAmigos.filter((a) => misBloqueados.has(a.uid));
 
-  for (const amigo of amigosAceptados) {
-    const [estado, perfil, clasesAmigo] = await Promise.all([
-      obtenerEstadoAmigo(amigo.uid),
-      obtenerPerfil(amigo.uid),
-      obtenerHorarioDeAmigo(amigo.uid),
-    ]);
-    const nombre = perfil.apodo || "Amigo sin apodo";
-    listaAmigos.appendChild(
-      tarjetaAmigo(amigo.uid, nombre, estado, clasesAmigo, misPermitidos.includes(amigo.uid), perfil.avatar)
+  listaAmigos.replaceChildren(...visibles.map((a) => tarjetaAmigo(a, false)));
+  listaBloqueados.replaceChildren(...ocultos.map((a) => tarjetaAmigo(a, true)));
+  if (!visibles.length) {
+    mensajeVacio(
+      listaAmigos,
+      datosAmigos.length ? "Tienes a todos tus amigos bloqueados." : "Todavía no tienes amigos agregados."
     );
   }
+  if (!ocultos.length) mensajeVacio(listaBloqueados, "No has bloqueado a nadie: todos tus amigos ven tu horario.");
+
+  contadorAmigos.textContent = visibles.length ? `(${visibles.length})` : "";
+  contadorBloqueados.textContent = ocultos.length ? `(${ocultos.length})` : "";
 }
 
 const COLORES_AVATAR = ["#8b5cf6", "#ec4899", "#3b82f6", "#10b981", "#f97316", "#0ea5e9", "#d946ef", "#eab308"];
 
 // Tarjeta de un amigo: arriba quién es y cómo está (+ Ver horario);
-// abajo, separado, si puede ver tu horario.
-function tarjetaAmigo(uid, nombre, estado, clasesAmigo, puedeVerMiHorario, avatarId) {
+// abajo, separado, el botón para bloquearlo o desbloquearlo.
+function tarjetaAmigo({ uid, nombre, estado, clasesAmigo, avatar: avatarId }, bloqueado) {
   const li = document.createElement("li");
   li.className = "tarjeta-amigo";
 
@@ -1246,29 +1287,60 @@ function tarjetaAmigo(uid, nombre, estado, clasesAmigo, puedeVerMiHorario, avata
     cabecera.appendChild(btnVer);
   }
 
-  const permiso = document.createElement("label");
+  const permiso = document.createElement("div");
   permiso.className = "amigo-permiso";
   const textoPermiso = document.createElement("span");
-  textoPermiso.textContent = "Puede ver mi horario";
-  const interruptor = document.createElement("input");
-  interruptor.type = "checkbox";
-  interruptor.className = "interruptor";
-  interruptor.checked = puedeVerMiHorario;
-  interruptor.addEventListener("change", () => cambiarPermiso(uid, interruptor));
-  permiso.append(textoPermiso, interruptor);
+  textoPermiso.textContent = bloqueado ? "🚫 No ve tu horario" : "Ve tu horario";
+  const btnBloquear = document.createElement("button");
+  btnBloquear.type = "button";
+  btnBloquear.className = bloqueado ? "btn-desbloquear" : "btn-bloquear";
+  btnBloquear.textContent = bloqueado ? "Desbloquear" : "Bloquear";
+  btnBloquear.addEventListener("click", () => cambiarBloqueo(uid, nombre, !bloqueado, btnBloquear));
+  permiso.append(textoPermiso, btnBloquear);
 
   li.append(cabecera, permiso);
   return li;
 }
 
-// ---------- Compartir horario con amigos elegidos ----------
+// ---------- Compartir horario con los amigos ----------
+// Por defecto todos tus amigos ven tu horario, menos los "bloqueados".
+// Las reglas de Firestore leen "permitidos", así que la app lo mantiene
+// al día: permitidos = amigos − bloqueados.
 
-async function obtenerMisPermitidos() {
+async function sincronizarPermitidos(uidsAmigos) {
+  const referencia = doc(db, "horariosCompartidos", usuarioActual.uid);
+  let bloqueados = new Set();
+  let permitidosGuardados = [];
   try {
-    const snapshot = await getDoc(doc(db, "horariosCompartidos", usuarioActual.uid));
-    return snapshot.exists() ? snapshot.data().permitidos || [] : [];
-  } catch {
-    return [];
+    const snapshot = await getDoc(referencia);
+    if (snapshot.exists()) {
+      bloqueados = new Set(snapshot.data().bloqueados || []);
+      permitidosGuardados = snapshot.data().permitidos || [];
+    }
+  } catch (error) {
+    console.error(error);
+    return bloqueados;
+  }
+
+  const permitidos = uidsAmigos.filter((uid) => !bloqueados.has(uid)).sort();
+  if (permitidos.join(",") !== [...permitidosGuardados].sort().join(",")) {
+    try {
+      await setDoc(referencia, { clases, permitidos }, { merge: true });
+    } catch (error) {
+      console.error("No se pudo actualizar quién ve tu horario:", error);
+    }
+  }
+  return bloqueados;
+}
+
+// Al entrar: así un amigo nuevo puede ver tu horario sin que tengas
+// que abrir la pestaña Amigos.
+async function sincronizarPermitidosAlEntrar() {
+  try {
+    const amigos = await obtenerAmigos();
+    await sincronizarPermitidos(amigos.map((a) => a.uid));
+  } catch (error) {
+    console.error(error);
   }
 }
 
@@ -1283,24 +1355,28 @@ async function obtenerHorarioDeAmigo(uid) {
   }
 }
 
-async function cambiarPermiso(uidAmigo, casilla) {
-  casilla.disabled = true;
+async function cambiarBloqueo(uidAmigo, nombre, bloquear, boton) {
+  if (bloquear && !confirm(`¿Bloquear a ${nombre}? Ya no podrá ver tu horario.`)) return;
+  boton.disabled = true;
   try {
     await setDoc(
       doc(db, "horariosCompartidos", usuarioActual.uid),
-      { clases, permitidos: casilla.checked ? arrayUnion(uidAmigo) : arrayRemove(uidAmigo) },
+      bloquear
+        ? { clases, bloqueados: arrayUnion(uidAmigo), permitidos: arrayRemove(uidAmigo) }
+        : { clases, bloqueados: arrayRemove(uidAmigo), permitidos: arrayUnion(uidAmigo) },
       { merge: true }
     );
+    if (bloquear) misBloqueados.add(uidAmigo);
+    else misBloqueados.delete(uidAmigo);
+    pintarListasAmigos();
   } catch (error) {
     console.error(error);
-    casilla.checked = !casilla.checked;
+    boton.disabled = false;
     alert(
       error.code === "permission-denied"
         ? "Firebase no dio permiso para guardar esto. Revisa que las reglas de 'horariosCompartidos' estén publicadas."
-        : `No se pudo cambiar el permiso (${error.code || error.message}). Intenta de nuevo.`
+        : `No se pudo cambiar (${error.code || error.message}). Intenta de nuevo.`
     );
-  } finally {
-    casilla.disabled = false;
   }
 }
 
@@ -1311,7 +1387,7 @@ const agendaAmigo = document.getElementById("agenda-amigo");
 
 function abrirHorarioAmigo(nombre, clasesAmigo) {
   tituloHorarioAmigo.textContent = `Horario de ${nombre}`;
-  construirEsqueletoGrid(gridAmigo);
+  construirEsqueletoGrid(gridAmigo, clasesAmigo);
   pintarClasesEnGrid(gridAmigo, clasesAmigo, false);
   pintarAgendaMovil(agendaAmigo, clasesAmigo, false);
   modalHorarioAmigo.hidden = false;
@@ -1357,7 +1433,7 @@ function fechaCorta(milisegundos) {
 }
 
 function calcularDivision() {
-  const total = Number(cuentaTotal.value);
+  const total = totalCuenta();
   const participantes = [...cuentaAmigosEl.querySelectorAll("input:checked")].map((c) => c.value);
   const personas = participantes.length + (cuentaIncluirme.checked ? 1 : 0);
   if (!(total > 0) || participantes.length === 0) return null;
@@ -1374,7 +1450,16 @@ function actualizarResumenCuenta() {
   }
 }
 
-cuentaTotal.addEventListener("input", actualizarResumenCuenta);
+// El total se escribe en pesos colombianos: "$ 200.000" (sin centavos).
+function totalCuenta() {
+  return Number(cuentaTotal.value.replace(/\D/g, ""));
+}
+
+cuentaTotal.addEventListener("input", () => {
+  const valor = totalCuenta();
+  cuentaTotal.value = valor > 0 ? pesos(valor) : "";
+  actualizarResumenCuenta();
+});
 cuentaIncluirme.addEventListener("change", actualizarResumenCuenta);
 cuentaAmigosEl.addEventListener("change", actualizarResumenCuenta);
 
@@ -1385,6 +1470,72 @@ function mensajeVacio(lista, texto) {
   lista.appendChild(vacio);
 }
 
+// ¿Quiénes estaban?: lista desplegable con casillas y un buscador por apodo.
+const selectorAmigos = document.getElementById("selector-amigos");
+const cuentaAmigosBoton = document.getElementById("cuenta-amigos-boton");
+const cuentaAmigosTexto = document.getElementById("cuenta-amigos-texto");
+const cuentaAmigosPanel = document.getElementById("cuenta-amigos-panel");
+const cuentaAmigosBuscar = document.getElementById("cuenta-amigos-buscar");
+const cuentaAmigosSinResultados = document.getElementById("cuenta-amigos-sin-resultados");
+
+// Sin tildes ni mayúsculas, para que "jose" encuentre a "José".
+function textoBusqueda(texto) {
+  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+}
+
+function abrirSelectorAmigos(abrir) {
+  cuentaAmigosPanel.hidden = !abrir;
+  cuentaAmigosBoton.setAttribute("aria-expanded", String(abrir));
+  if (abrir) {
+    cuentaAmigosBuscar.value = "";
+    filtrarAmigosCuenta();
+    cuentaAmigosBuscar.focus();
+  }
+}
+
+function filtrarAmigosCuenta() {
+  const busqueda = textoBusqueda(cuentaAmigosBuscar.value);
+  let visibles = 0;
+  cuentaAmigosEl.querySelectorAll("label").forEach((etiqueta) => {
+    const coincide = etiqueta.dataset.apodo.includes(busqueda);
+    etiqueta.hidden = !coincide;
+    if (coincide) visibles++;
+  });
+  cuentaAmigosSinResultados.hidden = visibles > 0;
+}
+
+function actualizarTextoSelectorAmigos() {
+  const nombres = [...cuentaAmigosEl.querySelectorAll("input:checked")].map(
+    (c) => c.closest("label").textContent.trim()
+  );
+  if (nombres.length === 0) cuentaAmigosTexto.textContent = "Selecciona a tus amigos";
+  else if (nombres.length <= 2) cuentaAmigosTexto.textContent = nombres.join(", ");
+  else cuentaAmigosTexto.textContent = `${nombres.slice(0, 2).join(", ")} y ${nombres.length - 2} más`;
+}
+
+cuentaAmigosBoton.addEventListener("click", () => abrirSelectorAmigos(cuentaAmigosPanel.hidden));
+cuentaAmigosBuscar.addEventListener("input", filtrarAmigosCuenta);
+cuentaAmigosBuscar.addEventListener("keydown", (evento) => {
+  // Enter marca al primero que aparece en vez de enviar el formulario.
+  if (evento.key === "Enter") {
+    evento.preventDefault();
+    const primera = cuentaAmigosEl.querySelector("label:not([hidden]) input");
+    if (primera && cuentaAmigosBuscar.value.trim()) {
+      primera.checked = !primera.checked;
+      primera.dispatchEvent(new Event("change", { bubbles: true }));
+      cuentaAmigosBuscar.value = "";
+      filtrarAmigosCuenta();
+    }
+  } else if (evento.key === "Escape") {
+    abrirSelectorAmigos(false);
+    cuentaAmigosBoton.focus();
+  }
+});
+cuentaAmigosEl.addEventListener("change", actualizarTextoSelectorAmigos);
+document.addEventListener("click", (evento) => {
+  if (!cuentaAmigosPanel.hidden && !selectorAmigos.contains(evento.target)) abrirSelectorAmigos(false);
+});
+
 function pintarAmigosCuenta(amigos) {
   const marcadosAntes = new Set(
     [...cuentaAmigosEl.querySelectorAll("input:checked")].map((c) => c.value)
@@ -1392,24 +1543,29 @@ function pintarAmigosCuenta(amigos) {
   cuentaAmigosEl.innerHTML = "";
 
   if (amigos.length === 0) {
-    const aviso = document.createElement("p");
-    aviso.className = "mensaje-vacio";
-    aviso.textContent = "Agrega amigos en la pestaña Amigos para poder dividir cuentas.";
-    cuentaAmigosEl.appendChild(aviso);
+    abrirSelectorAmigos(false);
+    cuentaAmigosBoton.disabled = true;
+    cuentaAmigosTexto.textContent = "Agrega amigos en la pestaña Amigos para poder dividir cuentas.";
     return;
   }
+  cuentaAmigosBoton.disabled = false;
 
-  amigos.forEach((amigo) => {
-    const etiqueta = document.createElement("label");
-    etiqueta.className = "dia-check";
-    const casilla = document.createElement("input");
-    casilla.type = "checkbox";
-    casilla.value = amigo.uid;
-    casilla.checked = marcadosAntes.has(amigo.uid);
-    etiqueta.appendChild(casilla);
-    etiqueta.appendChild(document.createTextNode(` ${amigo.apodo}`));
-    cuentaAmigosEl.appendChild(etiqueta);
-  });
+  [...amigos]
+    .sort((a, b) => a.apodo.localeCompare(b.apodo, "es"))
+    .forEach((amigo) => {
+      const etiqueta = document.createElement("label");
+      etiqueta.className = "amigo-opcion";
+      etiqueta.dataset.apodo = textoBusqueda(amigo.apodo);
+      const casilla = document.createElement("input");
+      casilla.type = "checkbox";
+      casilla.value = amigo.uid;
+      casilla.checked = marcadosAntes.has(amigo.uid);
+      etiqueta.appendChild(casilla);
+      etiqueta.appendChild(document.createTextNode(` ${amigo.apodo}`));
+      cuentaAmigosEl.appendChild(etiqueta);
+    });
+  filtrarAmigosCuenta();
+  actualizarTextoSelectorAmigos();
 }
 
 async function eliminarCuenta(idCuenta) {
@@ -1553,7 +1709,7 @@ function pintarPersona(lista, uidAmigo, apodo, par) {
     principal.textContent = `Le debes ${pesos(-par.neto)} a ${apodo}`;
     const espera = document.createElement("span");
     espera.className = "estado-badge estado-desconocido";
-    espera.textContent = `Esperando que ${apodo} confirme`;
+    espera.textContent = "⏳ Esperando confirmación";
     acciones.appendChild(espera);
   } else if (par.neto < 0) {
     principal.textContent = `Le debes ${pesos(-par.neto)} a ${apodo}`;
@@ -1627,8 +1783,14 @@ function pintarPersona(lista, uidAmigo, apodo, par) {
   lista.appendChild(li);
 }
 
+let ultimoRenderCuentas = 0;
+
 async function renderCuentas() {
+  // Igual que en Amigos: si arranca otro render mientras cargamos, este se
+  // descarta para que no salgan personas repetidas.
+  const idRender = ++ultimoRenderCuentas;
   const amigos = await obtenerAmigos();
+  if (idRender !== ultimoRenderCuentas) return;
   pintarAmigosCuenta(amigos);
   actualizarResumenCuenta();
 
@@ -1647,13 +1809,14 @@ async function renderCuentas() {
     ([, a], [, b]) => Math.abs(b.neto) - Math.abs(a.neto)
   );
 
+  const nombres = await Promise.all(pares.map(([uid]) => nombreDe(uid)));
+  if (idRender !== ultimoRenderCuentas) return;
+
   listaDebo.innerHTML = "";
   listaMeDeben.innerHTML = "";
-
-  for (const [uid, par] of pares) {
-    const apodo = await nombreDe(uid);
-    pintarPersona(par.neto < 0 ? listaDebo : listaMeDeben, uid, apodo, par);
-  }
+  pares.forEach(([uid, par], i) => {
+    pintarPersona(par.neto < 0 ? listaDebo : listaMeDeben, uid, nombres[i], par);
+  });
 
   if (!listaDebo.children.length) mensajeVacio(listaDebo, "No le debes nada a nadie 🎉");
   if (!listaMeDeben.children.length) mensajeVacio(listaMeDeben, "Nadie te debe nada por ahora.");
@@ -1704,6 +1867,8 @@ formCuenta.addEventListener("submit", async (evento) => {
     avisarAlInstante("avisar-cuenta", { idCuenta: nuevaCuenta.id });
     formCuenta.reset();
     cuentaAmigosEl.querySelectorAll("input").forEach((c) => (c.checked = false));
+    actualizarTextoSelectorAmigos();
+    abrirSelectorAmigos(false);
     cuentaResumen.hidden = true;
     alert(`¡Listo! Cada uno te debe ${pesos(division.porPersona)}. Ya les llega el aviso.`);
     renderCuentas();
@@ -1739,6 +1904,14 @@ const visorTiempo = document.getElementById("visor-tiempo");
 const visorTexto = document.getElementById("visor-texto");
 const visorBorrar = document.getElementById("visor-borrar");
 const visorBarra = document.getElementById("visor-barra");
+const visorReaccion = document.getElementById("visor-reaccion");
+const visorLike = document.getElementById("visor-like");
+const visorComentario = document.getElementById("visor-comentario");
+const visorEnviar = document.getElementById("visor-enviar");
+const visorYaComentaste = document.getElementById("visor-ya-comentaste");
+const visorVistas = document.getElementById("visor-vistas");
+const visorPanelVistas = document.getElementById("visor-panel-vistas");
+const visorListaVistas = document.getElementById("visor-lista-vistas");
 
 let fotoLista = null; // foto comprimida esperando a publicarse
 let temporizadorFotos = null;
@@ -1847,10 +2020,11 @@ function minutosRestantes(foto) {
   return Math.max(1, Math.ceil((foto.expira - Date.now()) / 60000));
 }
 
-function burbujaFoto({ nombre, miniatura, alTocar, esBoton = false }) {
+function burbujaFoto({ nombre, miniatura, alTocar, esBoton = false, insignia = "", apagada = false }) {
   const boton = document.createElement("button");
   boton.type = "button";
   boton.className = esBoton ? "foto-burbuja foto-burbuja-subir" : "foto-burbuja";
+  if (apagada) boton.classList.add("foto-burbuja-apagada");
   const anillo = document.createElement("span");
   anillo.className = "foto-anillo";
   const mini = document.createElement("span");
@@ -1858,6 +2032,12 @@ function burbujaFoto({ nombre, miniatura, alTocar, esBoton = false }) {
   if (miniatura) mini.style.backgroundImage = `url("${miniatura}")`;
   else mini.textContent = "📸";
   anillo.appendChild(mini);
+  if (insignia) {
+    const marca = document.createElement("span");
+    marca.className = "foto-insignia";
+    marca.textContent = insignia;
+    anillo.appendChild(marca);
+  }
   const etiqueta = document.createElement("span");
   etiqueta.className = "foto-nombre";
   etiqueta.textContent = nombre;
@@ -1866,16 +2046,22 @@ function burbujaFoto({ nombre, miniatura, alTocar, esBoton = false }) {
   return boton;
 }
 
+let ultimaCargaFotos = 0;
+
 async function cargarFotos() {
   if (!usuarioActual) return;
+  const idCarga = ++ultimaCargaFotos;
   const miUid = usuarioActual.uid;
   let documentos = [];
+  let chats = [];
   try {
-    const [mias, deAmigos] = await Promise.all([
+    const [mias, deAmigos, misChats] = await Promise.all([
       getDocs(query(collection(db, "fotos"), where("autor", "==", miUid))),
       getDocs(query(collection(db, "fotos"), where("visibles", "array-contains", miUid))),
+      obtenerMisChats(),
     ]);
     documentos = [...mias.docs, ...deAmigos.docs];
+    chats = misChats;
   } catch (error) {
     console.error("No se pudieron cargar las fotos:", error);
   }
@@ -1890,21 +2076,48 @@ async function cargarFotos() {
   });
   porAutor.forEach((fotos) => fotos.sort((a, b) => a.creada - b.creada));
 
+  // Burbujas de chat: si la foto es mía, cualquier like o comentario; si
+  // no, solo cuando comenté (mi propio like no necesita burbuja).
+  const chatsVigentes = chats
+    .filter((c) => chatVigente(c) && (c.autor === miUid || c.comentario))
+    .sort((a, b) => b.actualizada - a.actualizada);
+
+  const autores = [...porAutor.keys()].sort((a, b) => (a === miUid ? -1 : b === miUid ? 1 : 0));
+  const [nombresAutores, nombresChats] = await Promise.all([
+    Promise.all(autores.map(async (autor) => (autor === miUid ? "Tú" : (await obtenerApodo(autor)) || "Amigo"))),
+    Promise.all(
+      chatsVigentes.map(async (c) => (await obtenerApodo(c.autor === miUid ? c.amigo : c.autor)) || "Amigo")
+    ),
+  ]);
+  // Si arrancó otra carga mientras tanto, esa pinta (así no se duplican).
+  if (idCarga !== ultimaCargaFotos) return;
+
   barraFotos.innerHTML = "";
   barraFotos.appendChild(burbujaFoto({ nombre: "Subir foto", alTocar: abrirCamara, esBoton: true }));
 
-  const autores = [...porAutor.keys()].sort((a, b) => (a === miUid ? -1 : b === miUid ? 1 : 0));
-  for (const autor of autores) {
+  autores.forEach((autor, i) => {
     const fotos = porAutor.get(autor);
-    const nombre = autor === miUid ? "Tú" : (await obtenerApodo(autor)) || "Amigo";
     barraFotos.appendChild(
       burbujaFoto({
-        nombre,
+        nombre: nombresAutores[i],
         miniatura: fotos[fotos.length - 1].imagen,
-        alTocar: () => abrirVisor(fotos, nombre, autor === miUid),
+        alTocar: () => abrirVisor(fotos, nombresAutores[i], autor === miUid),
       })
     );
-  }
+  });
+
+  chatsVigentes.forEach((chat, i) => {
+    barraFotos.appendChild(
+      burbujaFoto({
+        nombre: nombresChats[i],
+        miniatura: chat.miniatura,
+        insignia: chat.comentario ? "💬" : "❤️",
+        // Apagada si lo último lo hice yo (no hay nada nuevo para mí).
+        apagada: chat.ultimoDe === miUid,
+        alTocar: () => abrirChat(chat, nombresChats[i]),
+      })
+    );
+  });
 }
 
 // ---------- Visor en pantalla completa ----------
@@ -1912,6 +2125,8 @@ async function cargarFotos() {
 let visorFotos = [];
 let visorIndice = 0;
 let visorTemporizador = null;
+let visorEsMia = false;
+let visorNombreAutor = "";
 const SEGUNDOS_POR_FOTO = 6;
 
 function mostrarFotoVisor() {
@@ -1935,15 +2150,44 @@ function mostrarFotoVisor() {
   });
   clearTimeout(visorTemporizador);
   visorTemporizador = setTimeout(siguienteFoto, SEGUNDOS_POR_FOTO * 1000);
+
+  visorPanelVistas.hidden = true;
+  if (visorEsMia) {
+    visorReaccion.hidden = true;
+    visorYaComentaste.hidden = true;
+    visorVistas.hidden = false;
+    pintarResumenVistas(foto);
+  } else {
+    visorVistas.hidden = true;
+    registrarVista(foto);
+    cargarMiReaccion(foto);
+  }
 }
 
 function abrirVisor(fotos, nombre, esMia) {
   visorFotos = fotos;
   visorIndice = 0;
+  visorEsMia = esMia;
+  visorNombreAutor = nombre;
   visorNombre.textContent = nombre;
   visorBorrar.hidden = !esMia;
   visorFoto.hidden = false;
+  chatsDeMisFotos = [];
+  if (esMia) {
+    obtenerMisChats().then((chats) => {
+      chatsDeMisFotos = chats;
+      if (!visorFoto.hidden && visorFotos[visorIndice]) pintarResumenVistas(visorFotos[visorIndice]);
+    });
+  }
   mostrarFotoVisor();
+}
+
+// Congela la barrita y el paso automático (mientras escribes o miras
+// quién vio la foto). Tocar la foto sigue pasando a la siguiente.
+function pausarVisor() {
+  clearTimeout(visorTemporizador);
+  visorBarra.style.width = getComputedStyle(visorBarra).width;
+  visorBarra.style.transition = "none";
 }
 
 function siguienteFoto() {
@@ -1955,6 +2199,8 @@ function siguienteFoto() {
 function cerrarVisor() {
   clearTimeout(visorTemporizador);
   visorFoto.hidden = true;
+  visorPanelVistas.hidden = true;
+  visorComentario.blur();
   visorImagen.removeAttribute("src");
 }
 
@@ -1973,6 +2219,327 @@ visorBorrar.addEventListener("click", async () => {
   cargarFotos();
 });
 
+// ---------- Reacciones a las fotos: vistas, likes y un comentario ----------
+// Cada amigo tiene un documento chats/<foto>_<amigo> con su like, su
+// comentario (uno solo) y la respuesta del autor (una sola). Guarda una
+// miniatura para que el Chat conserve la foto cuando esta ya se borró.
+
+let chatActual = null; // mi reacción a la foto que se ve en el visor
+let guardandoReaccion = false;
+let chatsDeMisFotos = [];
+
+function idChat(idFoto, uidAmigo) {
+  return `${idFoto}_${uidAmigo}`;
+}
+
+async function obtenerMisChats() {
+  try {
+    const snapshot = await getDocs(
+      query(collection(db, "chats"), where("participantes", "array-contains", usuarioActual.uid))
+    );
+    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (error) {
+    console.error("No se pudieron cargar los chats:", error);
+    return [];
+  }
+}
+
+function registrarVista(foto) {
+  const miUid = usuarioActual.uid;
+  if ((foto.vistas || []).includes(miUid)) return;
+  foto.vistas = [...(foto.vistas || []), miUid];
+  updateDoc(doc(db, "fotos", foto.id), { vistas: arrayUnion(miUid) }).catch((error) =>
+    console.error("No se pudo marcar la foto como vista:", error)
+  );
+}
+
+// Versión pequeñita de la foto para el Chat (unos pocos KB).
+async function miniaturaDe(imagenDatos) {
+  const imagen = new Image();
+  imagen.src = imagenDatos;
+  await imagen.decode();
+  const escala = Math.min(1, 200 / Math.max(imagen.width, imagen.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(imagen.width * escala);
+  canvas.height = Math.round(imagen.height * escala);
+  canvas.getContext("2d").drawImage(imagen, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.6);
+}
+
+async function cargarMiReaccion(foto) {
+  chatActual = null;
+  visorComentario.value = "";
+  pintarMiReaccion();
+  try {
+    const snapshot = await getDoc(doc(db, "chats", idChat(foto.id, usuarioActual.uid)));
+    if (visorFotos[visorIndice]?.id !== foto.id) return; // ya pasó a otra foto
+    chatActual = snapshot.exists() ? snapshot.data() : null;
+    pintarMiReaccion();
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function pintarMiReaccion() {
+  const yaComento = Boolean(chatActual?.comentario);
+  visorReaccion.hidden = false;
+  visorLike.textContent = chatActual?.like ? "❤️" : "🤍";
+  visorLike.classList.toggle("visor-like-activo", Boolean(chatActual?.like));
+  visorComentario.hidden = yaComento;
+  visorEnviar.hidden = yaComento;
+  visorComentario.placeholder = `Responder a ${visorNombreAutor}…`;
+  visorYaComentaste.hidden = !yaComento;
+  if (yaComento) {
+    visorYaComentaste.textContent = chatActual.respuesta
+      ? `Tú: ${chatActual.comentario}\n${visorNombreAutor}: ${chatActual.respuesta}`
+      : `Tú: ${chatActual.comentario}`;
+  }
+}
+
+async function guardarReaccion(cambios) {
+  const foto = visorFotos[visorIndice];
+  if (!foto || guardandoReaccion) return false;
+  guardandoReaccion = true;
+  const miUid = usuarioActual.uid;
+  const referencia = doc(db, "chats", idChat(foto.id, miUid));
+  const ahora = Date.now();
+  try {
+    if (!chatActual) {
+      const nuevo = {
+        foto: foto.id,
+        autor: foto.autor,
+        amigo: miUid,
+        participantes: [foto.autor, miUid],
+        miniatura: await miniaturaDe(foto.imagen),
+        textoFoto: foto.texto || "",
+        like: false,
+        comentario: null,
+        respuesta: null,
+        creada: ahora,
+        actualizada: ahora,
+        ultimoDe: miUid,
+        ...cambios,
+      };
+      await setDoc(referencia, nuevo);
+      chatActual = nuevo;
+    } else {
+      await updateDoc(referencia, { ...cambios, actualizada: ahora, ultimoDe: miUid });
+      Object.assign(chatActual, cambios);
+    }
+    return true;
+  } catch (error) {
+    console.error(error);
+    alert(
+      error.code === "permission-denied"
+        ? "Firebase no dio permiso. Revisa que las reglas de 'chats' estén publicadas."
+        : "No se pudo guardar. Intenta de nuevo."
+    );
+    return false;
+  } finally {
+    guardandoReaccion = false;
+  }
+}
+
+visorLike.addEventListener("click", async () => {
+  const antes = chatActual?.like || false;
+  visorLike.textContent = antes ? "🤍" : "❤️";
+  const foto = visorFotos[visorIndice];
+  if (!(await guardarReaccion({ like: !antes }))) visorLike.textContent = antes ? "❤️" : "🤍";
+  else if (!antes && foto) avisarAlInstante("avisar-chat", { idChat: idChat(foto.id, usuarioActual.uid), accion: "like" });
+  pintarMiReaccion();
+});
+
+visorComentario.addEventListener("focus", pausarVisor);
+
+visorReaccion.addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  const texto = visorComentario.value.trim();
+  if (!texto || chatActual?.comentario) return;
+  visorEnviar.disabled = true;
+  const foto = visorFotos[visorIndice];
+  if (await guardarReaccion({ comentario: texto })) {
+    visorComentario.blur();
+    avisarAlInstante("avisar-chat", { idChat: idChat(foto.id, usuarioActual.uid) });
+    cargarFotos(); // aparece la burbuja de este chat
+  }
+  visorEnviar.disabled = false;
+  pintarMiReaccion();
+});
+
+function pintarResumenVistas(foto) {
+  const likes = chatsDeMisFotos.filter((c) => c.foto === foto.id && c.like).length;
+  const vistas = (foto.vistas || []).length;
+  visorVistas.textContent = `👁 ${vistas} ${vistas === 1 ? "vista" : "vistas"} · ❤️ ${likes}`;
+}
+
+visorVistas.addEventListener("click", async () => {
+  const foto = visorFotos[visorIndice];
+  if (!foto) return;
+  pausarVisor();
+  visorListaVistas.innerHTML = "";
+  mensajeVacio(visorListaVistas, "Cargando…");
+  visorPanelVistas.hidden = false;
+
+  // Datos frescos: quizá alguien la vio después de que cargó la barra.
+  const [snapshot, chats] = await Promise.all([
+    getDoc(doc(db, "fotos", foto.id)).catch(() => null),
+    obtenerMisChats(),
+  ]);
+  chatsDeMisFotos = chats;
+  if (snapshot?.exists()) foto.vistas = snapshot.data().vistas || [];
+  pintarResumenVistas(foto);
+
+  const reaccionDe = Object.fromEntries(chats.filter((c) => c.foto === foto.id).map((c) => [c.amigo, c]));
+  const uids = [...new Set([...(foto.vistas || []), ...Object.keys(reaccionDe)])];
+  const nombres = await Promise.all(uids.map(async (uid) => (await obtenerApodo(uid)) || "Amigo"));
+
+  visorListaVistas.innerHTML = "";
+  if (!uids.length) mensajeVacio(visorListaVistas, "Nadie la ha visto todavía");
+  uids.forEach((uid, i) => {
+    const reaccion = reaccionDe[uid];
+    const li = document.createElement("li");
+    const nombre = document.createElement("strong");
+    nombre.textContent = `${nombres[i]}${reaccion?.like ? " ❤️" : ""}`;
+    li.appendChild(nombre);
+    if (reaccion?.comentario) {
+      const comentario = document.createElement("span");
+      comentario.textContent = `💬 ${reaccion.comentario}`;
+      li.appendChild(comentario);
+    }
+    visorListaVistas.appendChild(li);
+  });
+});
+
+document.getElementById("visor-panel-cerrar").addEventListener("click", () => {
+  visorPanelVistas.hidden = true;
+});
+
+// ---------- Burbujas de chat (duran 30 min) ----------
+// Cada like/comentario aparece como una burbuja en la barra de fotos,
+// junto a las fotos. Dura 30 minutos desde el último movimiento (el
+// comentario o la respuesta) y después desaparece; check-clases.js las borra.
+
+const DURACION_CHAT = 30 * 60 * 1000;
+const modalChat = document.getElementById("modal-chat");
+const modalChatContenido = document.getElementById("modal-chat-contenido");
+
+function chatTieneAlgo(chat) {
+  return chat.like || chat.comentario;
+}
+
+function chatVigente(chat) {
+  return chatTieneAlgo(chat) && chat.actualizada + DURACION_CHAT > Date.now();
+}
+
+function abrirChat(chat, nombreOtro) {
+  modalChatContenido.replaceChildren(tarjetaChat(chat, nombreOtro));
+  modalChat.hidden = false;
+}
+
+function cerrarChat() {
+  modalChat.hidden = true;
+  modalChatContenido.innerHTML = "";
+}
+
+document.getElementById("btn-cerrar-chat").addEventListener("click", cerrarChat);
+modalChat.addEventListener("click", (evento) => {
+  if (evento.target === modalChat) cerrarChat();
+});
+
+function burbujaChat(texto, mia) {
+  const burbuja = document.createElement("p");
+  burbuja.className = mia ? "chat-burbuja chat-burbuja-mia" : "chat-burbuja";
+  burbuja.textContent = texto;
+  return burbuja;
+}
+
+async function responderChat(chat, input, boton) {
+  const texto = input.value.trim();
+  if (!texto) return;
+  boton.disabled = true;
+  try {
+    await updateDoc(doc(db, "chats", chat.id), {
+      respuesta: texto,
+      actualizada: Date.now(),
+      ultimoDe: usuarioActual.uid,
+    });
+    avisarAlInstante("avisar-chat", { idChat: chat.id });
+    cerrarChat();
+    cargarFotos();
+  } catch (error) {
+    console.error(error);
+    boton.disabled = false;
+    alert("No se pudo enviar la respuesta. Intenta de nuevo.");
+  }
+}
+
+function tarjetaChat(chat, nombreOtro) {
+  const miUid = usuarioActual.uid;
+  const esMiFoto = chat.autor === miUid;
+  const li = document.createElement("div");
+  li.className = "chat-item";
+
+  const mini = document.createElement("img");
+  mini.className = "chat-mini";
+  mini.src = chat.miniatura;
+  mini.alt = "";
+
+  const cuerpo = document.createElement("div");
+  cuerpo.className = "chat-cuerpo";
+
+  const titulo = document.createElement("div");
+  titulo.className = "chat-titulo";
+  const quien = document.createElement("strong");
+  quien.textContent = esMiFoto ? `${nombreOtro} · tu foto` : `Foto de ${nombreOtro}`;
+  const cuando = document.createElement("small");
+  const minutos = Math.max(1, Math.ceil((chat.actualizada + DURACION_CHAT - Date.now()) / 60000));
+  cuando.textContent = `se borra en ${minutos} min`;
+  titulo.append(quien, cuando);
+  cuerpo.appendChild(titulo);
+
+  if (chat.textoFoto) {
+    const textoFoto = document.createElement("small");
+    textoFoto.className = "chat-texto-foto";
+    textoFoto.textContent = `“${chat.textoFoto}”`;
+    cuerpo.appendChild(textoFoto);
+  }
+  if (chat.like) {
+    const like = document.createElement("p");
+    like.className = "chat-like";
+    like.textContent = esMiFoto ? `❤️ A ${nombreOtro} le gustó tu foto` : "❤️ Te gustó esta foto";
+    cuerpo.appendChild(like);
+  }
+  if (chat.comentario) cuerpo.appendChild(burbujaChat(chat.comentario, !esMiFoto));
+  if (chat.respuesta) cuerpo.appendChild(burbujaChat(chat.respuesta, esMiFoto));
+
+  if (esMiFoto && chat.comentario && !chat.respuesta) {
+    const form = document.createElement("form");
+    form.className = "chat-responder";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.maxLength = 200;
+    input.placeholder = `Responder a ${nombreOtro}…`;
+    input.autocomplete = "off";
+    const boton = document.createElement("button");
+    boton.type = "submit";
+    boton.textContent = "Responder";
+    form.append(input, boton);
+    form.addEventListener("submit", (evento) => {
+      evento.preventDefault();
+      responderChat(chat, input, boton);
+    });
+    cuerpo.appendChild(form);
+  } else if (!esMiFoto && chat.comentario && !chat.respuesta) {
+    const espera = document.createElement("small");
+    espera.className = "chat-espera";
+    espera.textContent = `Esperando la respuesta de ${nombreOtro}`;
+    cuerpo.appendChild(espera);
+  }
+
+  li.append(mini, cuerpo);
+  return li;
+}
+
 function iniciarFotos() {
   cargarFotos();
   clearInterval(temporizadorFotos);
@@ -1983,6 +2550,7 @@ function detenerFotos() {
   clearInterval(temporizadorFotos);
   barraFotos.innerHTML = "";
   cerrarVisor();
+  cerrarChat();
 }
 
 document.addEventListener("visibilitychange", () => {
@@ -2026,9 +2594,19 @@ function colorParaMateria(materia, listaClases = clases) {
   return PALETA_COLORES[indice];
 }
 
-function construirEsqueletoGrid(grid = document.getElementById("grid-horario")) {
+// La cuadrícula empieza a las 7:00, o a las 6:00 si hay alguna clase
+// antes de las 7 (así nadie más ve una fila vacía de más).
+function horaInicioGrid(listaClases) {
+  const tieneClaseTemprano = listaClases.some((c) => minutosDesde(c.horaInicio) < HORA_INICIO_GRID * 60);
+  return tieneClaseTemprano ? HORA_MINIMA_CLASE : HORA_INICIO_GRID;
+}
+
+function construirEsqueletoGrid(grid = document.getElementById("grid-horario"), listaClases = clases) {
+  const inicio = horaInicioGrid(listaClases);
+  const filasTotales = (HORA_FIN_GRID - inicio) * 2;
+  grid.dataset.horaInicio = String(inicio);
   grid.innerHTML = "";
-  grid.style.gridTemplateRows = `36px repeat(${FILAS_TOTALES}, 28px)`;
+  grid.style.gridTemplateRows = `36px repeat(${filasTotales}, 28px)`;
 
   const esquina = document.createElement("div");
   esquina.style.gridColumn = "1";
@@ -2043,10 +2621,10 @@ function construirEsqueletoGrid(grid = document.getElementById("grid-horario")) 
     grid.appendChild(celda);
   });
 
-  for (let f = 0; f < FILAS_TOTALES; f++) {
+  for (let f = 0; f < filasTotales; f++) {
     const filaGrid = f + 2;
     if (f % 2 === 0) {
-      const hora = HORA_INICIO_GRID + f / 2;
+      const hora = inicio + f / 2;
       const etiqueta = document.createElement("div");
       etiqueta.className = "celda-hora";
       etiqueta.textContent = `${String(hora).padStart(2, "0")}:00`;
@@ -2065,11 +2643,13 @@ function construirEsqueletoGrid(grid = document.getElementById("grid-horario")) 
 }
 
 function pintarClasesEnGrid(grid = document.getElementById("grid-horario"), listaClases = clases, editable = true) {
+  const inicio = Number(grid.dataset.horaInicio) || HORA_INICIO_GRID;
+  const filasTotales = (HORA_FIN_GRID - inicio) * 2;
   listaClases.forEach((clase) => {
-    const inicioMin = minutosDesde(clase.horaInicio) - HORA_INICIO_GRID * 60;
-    const finMin = minutosDesde(clase.horaFin) - HORA_INICIO_GRID * 60;
+    const inicioMin = minutosDesde(clase.horaInicio) - inicio * 60;
+    const finMin = minutosDesde(clase.horaFin) - inicio * 60;
     const filaInicio = 2 + Math.max(0, Math.round(inicioMin / 30));
-    const filaFin = 2 + Math.min(FILAS_TOTALES, Math.round(finMin / 30));
+    const filaFin = 2 + Math.min(filasTotales, Math.round(finMin / 30));
     if (filaFin <= filaInicio) return;
 
     (clase.dias || []).forEach((dia) => {

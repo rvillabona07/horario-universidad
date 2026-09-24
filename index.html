@@ -12,7 +12,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="ParchApp" />
   <!-- Al publicar cambios, sube este número (aquí y en script.js abajo) -->
-  <link rel="stylesheet" href="style.css?v=30" />
+  <link rel="stylesheet" href="style.css?v=40" />
 </head>
 <body>
   <header>
@@ -138,6 +138,14 @@
     </div>
   </div>
 
+  <!-- Burbuja de reacción a una foto: like, comentario y respuesta (dura 30 min) -->
+  <div id="modal-chat" class="modal-overlay" hidden>
+    <div class="modal-colores modal-chat">
+      <button type="button" id="btn-cerrar-chat" class="btn-cerrar-modal" title="Cerrar">×</button>
+      <div id="modal-chat-contenido"></div>
+    </div>
+  </div>
+
   <div id="modal-foto-preview" class="modal-overlay" hidden>
     <div class="modal-colores modal-foto-preview">
       <button type="button" id="btn-cerrar-foto-preview" class="btn-cerrar-modal" title="Cerrar">×</button>
@@ -164,6 +172,25 @@
     </div>
     <img id="visor-imagen" class="visor-imagen" alt="" />
     <p id="visor-texto" class="visor-texto" hidden></p>
+
+    <!-- Foto de un amigo: like y un comentario corto -->
+    <form id="visor-reaccion" class="visor-reaccion" hidden>
+      <button type="button" id="visor-like" class="visor-like" aria-label="Me gusta">🤍</button>
+      <input type="text" id="visor-comentario" placeholder="Responder…" maxlength="200" autocomplete="off" enterkeyhint="send" />
+      <button type="submit" id="visor-enviar" class="visor-enviar">Enviar</button>
+    </form>
+    <p id="visor-ya-comentaste" class="visor-ya-comentaste" hidden></p>
+
+    <!-- Foto mía: quién la vio -->
+    <button type="button" id="visor-vistas" class="visor-vistas" hidden></button>
+    <div id="visor-panel-vistas" class="visor-panel-vistas" hidden>
+      <div class="visor-panel-cabecera">
+        <strong>Quién la vio</strong>
+        <button type="button" id="visor-panel-cerrar" class="visor-cerrar" aria-label="Cerrar">×</button>
+      </div>
+      <ul id="visor-lista-vistas" class="visor-lista-vistas"></ul>
+      <p class="visor-panel-nota">Los comentarios los respondes desde su burbuja 💬 arriba</p>
+    </div>
   </div>
 
   <div id="modal-horario-amigo" class="modal-overlay" hidden>
@@ -222,9 +249,9 @@
     <input type="file" id="input-foto" accept="image/*" capture="environment" hidden />
 
     <nav class="tabs-principales">
-      <button type="button" id="tab-horario" class="tab-boton tab-activo"><span class="tab-icono"><svg class="icono-calendario" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="5" width="26" height="24" rx="5" fill="#ffffff" stroke="#e5e7eb"/><path d="M3 10a5 5 0 0 1 5-5h16a5 5 0 0 1 5 5v2.5H3z" fill="#ef4444"/><text x="16" y="26.2" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-weight="800" font-size="14" fill="#1f2937">7</text></svg></span><span>Horario</span></button>
-      <button type="button" id="tab-amigos" class="tab-boton"><span class="tab-icono">👥</span><span>Amigos</span></button>
-      <button type="button" id="tab-cuentas" class="tab-boton"><span class="tab-icono">💸</span><span>Cuentas</span></button>
+      <button type="button" id="tab-horario" class="tab-boton tab-activo"><span class="tab-icono"><svg class="icono-tab" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16.5" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg></span><span>Horario</span></button>
+      <button type="button" id="tab-amigos" class="tab-boton"><span class="tab-icono"><svg class="icono-tab" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.2a6.5 6.5 0 0 1 3 5.8"/></svg></span><span>Amigos</span></button>
+      <button type="button" id="tab-cuentas" class="tab-boton"><span class="tab-icono"><svg class="icono-tab" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg></span><span>Cuentas</span></button>
     </nav>
 
     <div id="vista-horario">
@@ -253,12 +280,12 @@
 
         <label>
           Hora inicio
-          <input type="time" id="hora-inicio" min="07:00" max="22:00" required />
+          <input type="time" id="hora-inicio" min="06:00" max="22:00" required />
         </label>
 
         <label>
           Hora fin
-          <input type="time" id="hora-fin" min="07:00" max="22:00" required />
+          <input type="time" id="hora-fin" min="06:00" max="22:00" required />
         </label>
 
         <label>
@@ -346,8 +373,7 @@
         <div class="enlace-botones">
           <button type="button" id="btn-compartir-enlace" class="btn-compartir-enlace">📤 Compartir enlace</button>
           <button type="button" id="btn-copiar-enlace" class="btn-copiar-enlace">Copiar</button>
-        </div>
-      </section>
+        </div>      </section>
 
       <section id="seccion-solicitudes" class="panel-formulario panel-amigos-agregar" hidden>
         <h2>Solicitudes recibidas</h2>
@@ -356,15 +382,24 @@
 
       <section class="panel-formulario">
         <h2>Mis amigos</h2>
-        <p class="modal-colores-subtexto">Tú eliges quién puede ver tu horario</p>
+        <div class="subpestanas" role="tablist">
+          <button type="button" id="subpestana-amigos" class="subpestana subpestana-activa" role="tab">
+            Amigos <span id="contador-amigos" class="subpestana-contador"></span>
+          </button>
+          <button type="button" id="subpestana-bloqueados" class="subpestana" role="tab">
+            🚫 Bloqueados <span id="contador-bloqueados" class="subpestana-contador"></span>
+          </button>
+        </div>
+        <p id="amigos-subtexto" class="modal-colores-subtexto">Todos tus amigos pueden ver tu horario, menos los que bloquees</p>
         <ul id="lista-amigos" class="lista-items"></ul>
+        <ul id="lista-bloqueados" class="lista-items" hidden></ul>
       </section>
     </div>
 
     <div id="vista-cuentas" hidden>
       <section class="panel-formulario">
         <h2>Nueva cuenta</h2>
-        <p class="modal-colores-subtexto">Pon lo que pagaste, marca quiénes estaban y la app lo divide en partes iguales y les avisa</p>
+        <p class="modal-colores-subtexto">Pon lo que pagaste, marca quiénes estaban y la app lo divide en partes iguales y les avisa. Si también le debes a alguien, se cruza y solo queda la diferencia.</p>
         <form id="form-cuenta">
           <label>
             ¿Qué fue?
@@ -372,11 +407,21 @@
           </label>
           <label>
             ¿Cuánto pagaste?
-            <input type="number" id="cuenta-total" placeholder="Ej. 200000" min="1" step="any" inputmode="decimal" required />
+            <input type="text" id="cuenta-total" placeholder="Ej. $ 200.000" inputmode="numeric" autocomplete="off" required />
           </label>
           <fieldset class="dias-fieldset">
             <legend>¿Quiénes estaban?</legend>
-            <div id="cuenta-amigos" class="cuenta-amigos"></div>
+            <div id="selector-amigos" class="selector-amigos">
+              <button type="button" id="cuenta-amigos-boton" class="selector-amigos-boton" aria-expanded="false">
+                <span id="cuenta-amigos-texto">Selecciona a tus amigos</span>
+                <span class="selector-amigos-flecha">▾</span>
+              </button>
+              <div id="cuenta-amigos-panel" class="selector-amigos-panel" hidden>
+                <input type="search" id="cuenta-amigos-buscar" placeholder="🔍 Buscar por apodo" autocomplete="off" />
+                <div id="cuenta-amigos" class="cuenta-amigos"></div>
+                <p id="cuenta-amigos-sin-resultados" class="mensaje-vacio" hidden>Nadie con ese apodo</p>
+              </div>
+            </div>
           </fieldset>
           <label class="dia-check cuenta-incluirme">
             <input type="checkbox" id="cuenta-incluirme" checked /> Incluirme en la división
@@ -399,6 +444,6 @@
     </div>
   </main>
 
-  <script type="module" src="script.js?v=30"></script>
+  <script type="module" src="script.js?v=40"></script>
 </body>
 </html>
