@@ -83,51 +83,51 @@ const HORA_FIN_GRID = 22; // 22:00
 const TEMAS_COLOR = [
   {
     nombre: "Morado",
-    principal: "#8b5cf6",
-    secundario: "#7c3aed",
-    acento1: "#d946ef",
-    acento2: "#3b82f6",
-    paleta: ["#8b5cf6", "#ec4899", "#3b82f6", "#d946ef", "#6366f1", "#f472b6", "#a855f7", "#0ea5e9"],
+    principal: "#7c5cff",
+    secundario: "#6a47f5",
+    acento1: "#ff5ca8",
+    acento2: "#3aa0ff",
+    paleta: ["#7c5cff", "#ff5ca8", "#3a8bff", "#b65cf5", "#5b6cff", "#f0648c", "#8f6bff", "#14a8d6"],
   },
   {
     nombre: "Azul",
-    principal: "#3b82f6",
-    secundario: "#2563eb",
-    acento1: "#0ea5e9",
-    acento2: "#06b6d4",
-    paleta: ["#3b82f6", "#2563eb", "#0ea5e9", "#06b6d4", "#6366f1", "#0284c7", "#38bdf8", "#1d4ed8"],
+    principal: "#2f7bff",
+    secundario: "#1f63f0",
+    acento1: "#00b4d8",
+    acento2: "#7c5cff",
+    paleta: ["#2f7bff", "#1f63f0", "#0a9fcf", "#12a8a3", "#5b6cff", "#3b8ef5", "#0c7fd1", "#6c63ff"],
   },
   {
     nombre: "Verde",
-    principal: "#10b981",
-    secundario: "#059669",
-    acento1: "#22c55e",
-    acento2: "#14b8a6",
-    paleta: ["#10b981", "#059669", "#22c55e", "#14b8a6", "#65a30d", "#16a34a", "#0d9488", "#4ade80"],
+    principal: "#12b886",
+    secundario: "#0ca678",
+    acento1: "#40c057",
+    acento2: "#15aabf",
+    paleta: ["#12b886", "#0ca678", "#37a24d", "#1098ad", "#5c940d", "#2b9348", "#0b7285", "#20a67a"],
   },
   {
     nombre: "Naranja",
-    principal: "#f97316",
-    secundario: "#ea580c",
-    acento1: "#f59e0b",
-    acento2: "#ef4444",
-    paleta: ["#f97316", "#ea580c", "#f59e0b", "#ef4444", "#fb923c", "#dc2626", "#eab308", "#f43f5e"],
+    principal: "#ff7a1a",
+    secundario: "#f76707",
+    acento1: "#fcc419",
+    acento2: "#fa5252",
+    paleta: ["#ff7a1a", "#f76707", "#e8a200", "#fa5252", "#ff922b", "#e03131", "#d9480f", "#f06595"],
   },
   {
     nombre: "Rosado",
-    principal: "#ec4899",
-    secundario: "#db2777",
-    acento1: "#f472b6",
-    acento2: "#a855f7",
-    paleta: ["#ec4899", "#db2777", "#f472b6", "#a855f7", "#f43f5e", "#c026d3", "#e879f9", "#be185d"],
+    principal: "#f0508c",
+    secundario: "#e03b7a",
+    acento1: "#ff8fab",
+    acento2: "#9775fa",
+    paleta: ["#f0508c", "#e03b7a", "#ef6f9c", "#9775fa", "#fa5252", "#c152e0", "#d164f0", "#c2255c"],
   },
   {
     nombre: "Gris",
-    principal: "#475569",
-    secundario: "#334155",
-    acento1: "#64748b",
-    acento2: "#0ea5e9",
-    paleta: ["#475569", "#334155", "#64748b", "#0ea5e9", "#7c3aed", "#059669", "#ea580c", "#db2777"],
+    principal: "#3d3b50",
+    secundario: "#2a2839",
+    acento1: "#6c6a85",
+    acento2: "#3aa0ff",
+    paleta: ["#3d3b50", "#5c5a76", "#2f7bff", "#12b886", "#7c5cff", "#ff7a1a", "#f0508c", "#0b7285"],
   },
 ];
 
@@ -279,13 +279,13 @@ function pintarEstadoNotificaciones() {
   const activas = messaging && Notification.permission === "granted";
   btnActivarDesdeAjustes.hidden = true;
   if (activas) {
-    estadoNotif.textContent = "✅ Activadas en este celular";
+    estadoNotif.textContent = "Activadas en este celular";
   } else if (!messaging) {
     estadoNotif.textContent = esIphoneSinInstalar()
-      ? "📲 En iPhone primero instala ParchApp (botón «Instalar» de arriba)."
+      ? "En iPhone primero instala ParchApp (botón «Instalar» de arriba)."
       : "Este navegador no permite notificaciones. Prueba en Chrome.";
   } else if (Notification.permission === "denied") {
-    estadoNotif.textContent = "🚫 Bloqueadas. Permítelas desde el candado 🔒 del navegador.";
+    estadoNotif.textContent = "Bloqueadas. Permítelas desde el candado del navegador.";
   } else {
     estadoNotif.textContent = "Todavía no están activadas en este celular.";
     btnActivarDesdeAjustes.hidden = false;
@@ -311,7 +311,7 @@ async function abrirAjustesNotificaciones() {
     const texto = document.createElement("span");
     texto.className = "ajuste-notif-texto";
     const titulo = document.createElement("strong");
-    titulo.textContent = `${tipo.icono} ${tipo.titulo}`;
+    titulo.textContent = tipo.titulo;
     const detalle = document.createElement("small");
     detalle.textContent = tipo.detalle;
     texto.append(titulo, detalle);
@@ -1058,9 +1058,45 @@ let miEnlace = "";
 let ultimoRenderAmigos = 0;
 let datosAmigos = [];
 let misBloqueados = new Set();
+let viendoBloqueados = false;
+
+// Modo "Seleccionar": se tocan varias tarjetas y se bloquean (o
+// desbloquean) de una vez, sin un botón en cada tarjeta.
+const btnSeleccionarAmigos = document.getElementById("btn-seleccionar-amigos");
+const accionesSeleccion = document.getElementById("acciones-seleccion");
+const textoSeleccion = document.getElementById("texto-seleccion");
+const btnAccionSeleccion = document.getElementById("btn-accion-seleccion");
+let modoSeleccion = false;
+let seleccionados = new Set();
+
+function cambiarModoSeleccion(activo) {
+  modoSeleccion = activo;
+  seleccionados = new Set();
+  btnSeleccionarAmigos.textContent = activo ? "Cancelar" : "Seleccionar";
+  accionesSeleccion.hidden = !activo;
+  actualizarAccionesSeleccion();
+  pintarListasAmigos();
+}
+
+function actualizarAccionesSeleccion() {
+  const n = seleccionados.size;
+  textoSeleccion.textContent =
+    n === 0 ? "Toca a los amigos" : `${n} ${n === 1 ? "seleccionado" : "seleccionados"}`;
+  btnAccionSeleccion.textContent = viendoBloqueados ? "Desbloquear" : "Bloquear";
+  btnAccionSeleccion.classList.toggle("btn-accion-desbloquear", viendoBloqueados);
+  btnAccionSeleccion.disabled = n === 0;
+}
+
+// Buscador de amigos: filtra las dos pestañas (también mientras seleccionas).
+const buscarAmigos = document.getElementById("buscar-amigos");
+buscarAmigos.addEventListener("input", pintarListasAmigos);
+
+btnSeleccionarAmigos.addEventListener("click", () => cambiarModoSeleccion(!modoSeleccion));
+btnAccionSeleccion.addEventListener("click", () => cambiarBloqueo([...seleccionados], !viendoBloqueados));
 
 // Pestañas "Amigos" / "Bloqueados" dentro de Mis amigos.
 function mostrarSubpestana(bloqueados) {
+  viendoBloqueados = bloqueados;
   subpestanaAmigos.classList.toggle("subpestana-activa", !bloqueados);
   subpestanaBloqueados.classList.toggle("subpestana-activa", bloqueados);
   listaAmigos.hidden = bloqueados;
@@ -1068,6 +1104,7 @@ function mostrarSubpestana(bloqueados) {
   amigosSubtexto.textContent = bloqueados
     ? "Estos amigos no pueden ver tu horario"
     : "Todos tus amigos pueden ver tu horario, menos los que bloquees";
+  if (modoSeleccion) cambiarModoSeleccion(false);
 }
 
 subpestanaAmigos.addEventListener("click", () => mostrarSubpestana(false));
@@ -1233,28 +1270,52 @@ async function renderAmigos() {
 function pintarListasAmigos() {
   const visibles = datosAmigos.filter((a) => !misBloqueados.has(a.uid));
   const ocultos = datosAmigos.filter((a) => misBloqueados.has(a.uid));
+  const busqueda = textoBusqueda(buscarAmigos.value);
+  const coincide = (a) => !busqueda || textoBusqueda(a.nombre).includes(busqueda);
+  const visiblesFiltrados = visibles.filter(coincide);
+  const ocultosFiltrados = ocultos.filter(coincide);
 
-  listaAmigos.replaceChildren(...visibles.map((a) => tarjetaAmigo(a, false)));
-  listaBloqueados.replaceChildren(...ocultos.map((a) => tarjetaAmigo(a, true)));
+  listaAmigos.replaceChildren(...visiblesFiltrados.map((a) => tarjetaAmigo(a)));
+  listaBloqueados.replaceChildren(...ocultosFiltrados.map((a) => tarjetaAmigo(a)));
+  // Sin nadie a quién seleccionar en esta pestaña, el botón no aplica.
+  btnSeleccionarAmigos.hidden = !modoSeleccion && !(viendoBloqueados ? ocultos : visibles).length;
+  buscarAmigos.hidden = datosAmigos.length === 0;
+
   if (!visibles.length) {
     mensajeVacio(
       listaAmigos,
       datosAmigos.length ? "Tienes a todos tus amigos bloqueados." : "Todavía no tienes amigos agregados."
     );
+  } else if (!visiblesFiltrados.length) {
+    mensajeVacio(listaAmigos, "Ningún amigo con ese apodo.");
   }
-  if (!ocultos.length) mensajeVacio(listaBloqueados, "No has bloqueado a nadie: todos tus amigos ven tu horario.");
+  if (!ocultos.length) {
+    mensajeVacio(listaBloqueados, "No has bloqueado a nadie: todos tus amigos ven tu horario.");
+  } else if (!ocultosFiltrados.length) {
+    mensajeVacio(listaBloqueados, "Ningún bloqueado con ese apodo.");
+  }
 
   contadorAmigos.textContent = visibles.length ? `(${visibles.length})` : "";
   contadorBloqueados.textContent = ocultos.length ? `(${ocultos.length})` : "";
 }
 
-const COLORES_AVATAR = ["#8b5cf6", "#ec4899", "#3b82f6", "#10b981", "#f97316", "#0ea5e9", "#d946ef", "#eab308"];
+const COLORES_AVATAR = ["#7c5cff", "#ff5ca8", "#2f7bff", "#12b886", "#ff7a1a", "#14a8d6", "#b65cf5", "#e8a200"];
 
-// Tarjeta de un amigo: arriba quién es y cómo está (+ Ver horario);
-// abajo, separado, el botón para bloquearlo o desbloquearlo.
-function tarjetaAmigo({ uid, nombre, estado, clasesAmigo, avatar: avatarId }, bloqueado) {
+// Tarjeta de un amigo: quién es, cómo está y "Ver horario". En modo
+// Seleccionar, tocar la tarjeta la marca (y se oculta "Ver horario").
+function tarjetaAmigo({ uid, nombre, estado, clasesAmigo, avatar: avatarId }) {
   const li = document.createElement("li");
   li.className = "tarjeta-amigo";
+  if (modoSeleccion) {
+    li.classList.add("tarjeta-seleccionable");
+    li.classList.toggle("tarjeta-seleccionada", seleccionados.has(uid));
+    li.addEventListener("click", () => {
+      if (seleccionados.has(uid)) seleccionados.delete(uid);
+      else seleccionados.add(uid);
+      li.classList.toggle("tarjeta-seleccionada", seleccionados.has(uid));
+      actualizarAccionesSeleccion();
+    });
+  }
 
   const cabecera = document.createElement("div");
   cabecera.className = "amigo-cabecera";
@@ -1278,7 +1339,12 @@ function tarjetaAmigo({ uid, nombre, estado, clasesAmigo, avatar: avatarId }, bl
 
   cabecera.append(avatar, datos);
 
-  if (clasesAmigo) {
+  if (modoSeleccion) {
+    const marca = document.createElement("span");
+    marca.className = "marca-seleccion";
+    marca.setAttribute("aria-hidden", "true");
+    cabecera.appendChild(marca);
+  } else if (clasesAmigo) {
     const btnVer = document.createElement("button");
     btnVer.type = "button";
     btnVer.className = "btn-ver-horario";
@@ -1287,18 +1353,7 @@ function tarjetaAmigo({ uid, nombre, estado, clasesAmigo, avatar: avatarId }, bl
     cabecera.appendChild(btnVer);
   }
 
-  const permiso = document.createElement("div");
-  permiso.className = "amigo-permiso";
-  const textoPermiso = document.createElement("span");
-  textoPermiso.textContent = bloqueado ? "🚫 No ve tu horario" : "Ve tu horario";
-  const btnBloquear = document.createElement("button");
-  btnBloquear.type = "button";
-  btnBloquear.className = bloqueado ? "btn-desbloquear" : "btn-bloquear";
-  btnBloquear.textContent = bloqueado ? "Desbloquear" : "Bloquear";
-  btnBloquear.addEventListener("click", () => cambiarBloqueo(uid, nombre, !bloqueado, btnBloquear));
-  permiso.append(textoPermiso, btnBloquear);
-
-  li.append(cabecera, permiso);
+  li.appendChild(cabecera);
   return li;
 }
 
@@ -1355,23 +1410,24 @@ async function obtenerHorarioDeAmigo(uid) {
   }
 }
 
-async function cambiarBloqueo(uidAmigo, nombre, bloquear, boton) {
-  if (bloquear && !confirm(`¿Bloquear a ${nombre}? Ya no podrá ver tu horario.`)) return;
-  boton.disabled = true;
+async function cambiarBloqueo(uids, bloquear) {
+  if (!uids.length) return;
+  const cuantos = uids.length === 1 ? "a este amigo" : `a estos ${uids.length} amigos`;
+  if (bloquear && !confirm(`¿Bloquear ${cuantos}? Ya no podrán ver tu horario.`)) return;
+  btnAccionSeleccion.disabled = true;
   try {
     await setDoc(
       doc(db, "horariosCompartidos", usuarioActual.uid),
       bloquear
-        ? { clases, bloqueados: arrayUnion(uidAmigo), permitidos: arrayRemove(uidAmigo) }
-        : { clases, bloqueados: arrayRemove(uidAmigo), permitidos: arrayUnion(uidAmigo) },
+        ? { clases, bloqueados: arrayUnion(...uids), permitidos: arrayRemove(...uids) }
+        : { clases, bloqueados: arrayRemove(...uids), permitidos: arrayUnion(...uids) },
       { merge: true }
     );
-    if (bloquear) misBloqueados.add(uidAmigo);
-    else misBloqueados.delete(uidAmigo);
-    pintarListasAmigos();
+    uids.forEach((uid) => (bloquear ? misBloqueados.add(uid) : misBloqueados.delete(uid)));
+    cambiarModoSeleccion(false);
   } catch (error) {
     console.error(error);
-    boton.disabled = false;
+    btnAccionSeleccion.disabled = false;
     alert(
       error.code === "permission-denied"
         ? "Firebase no dio permiso para guardar esto. Revisa que las reglas de 'horariosCompartidos' estén publicadas."
@@ -1709,7 +1765,7 @@ function pintarPersona(lista, uidAmigo, apodo, par) {
     principal.textContent = `Le debes ${pesos(-par.neto)} a ${apodo}`;
     const espera = document.createElement("span");
     espera.className = "estado-badge estado-desconocido";
-    espera.textContent = "⏳ Esperando confirmación";
+    espera.textContent = "Esperando confirmación";
     acciones.appendChild(espera);
   } else if (par.neto < 0) {
     principal.textContent = `Le debes ${pesos(-par.neto)} a ${apodo}`;
@@ -2030,7 +2086,8 @@ function burbujaFoto({ nombre, miniatura, alTocar, esBoton = false, insignia = "
   const mini = document.createElement("span");
   mini.className = "foto-mini";
   if (miniatura) mini.style.backgroundImage = `url("${miniatura}")`;
-  else mini.textContent = "📸";
+  // Botón "Subir foto": un + de línea en vez del emoji de cámara.
+  else mini.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
   anillo.appendChild(mini);
   if (insignia) {
     const marca = document.createElement("span");
@@ -2369,7 +2426,7 @@ visorReaccion.addEventListener("submit", async (evento) => {
 function pintarResumenVistas(foto) {
   const likes = chatsDeMisFotos.filter((c) => c.foto === foto.id && c.like).length;
   const vistas = (foto.vistas || []).length;
-  visorVistas.textContent = `👁 ${vistas} ${vistas === 1 ? "vista" : "vistas"} · ❤️ ${likes}`;
+  visorVistas.textContent = `${vistas} ${vistas === 1 ? "vista" : "vistas"} · ${likes} me gusta`;
 }
 
 visorVistas.addEventListener("click", async () => {
@@ -2403,7 +2460,7 @@ visorVistas.addEventListener("click", async () => {
     li.appendChild(nombre);
     if (reaccion?.comentario) {
       const comentario = document.createElement("span");
-      comentario.textContent = `💬 ${reaccion.comentario}`;
+      comentario.textContent = `“${reaccion.comentario}”`;
       li.appendChild(comentario);
     }
     visorListaVistas.appendChild(li);
