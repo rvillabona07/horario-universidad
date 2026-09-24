@@ -1890,6 +1890,241 @@ async function renderCuentas() {
 // Si falla, el script de GitHub manda el aviso en su siguiente revisión.
 const URL_AVISOS = "https://horario-avisos.horario-avisos.workers.dev";
 
+// ---------- Importar el horario desde el PDF de la universidad ----------
+// Todo gratis:
+// 1. Primero se lee en el celular (importar-local.js): PDF.js para los PDF
+//    y OCR (Tesseract) para las capturas.
+// 2. Si ahí no sale nada, o la persona toca "Leer con IA", se manda una
+//    imagen del horario al servidor de avisos, que usa la IA gratis de
+//    Cloudflare (tiene un cupo diario; si se acaba, no cobra, solo falla).
+// La app muestra lo que encontró para revisarlo y solo agrega lo marcado.
+
+const modalImportar = document.getElementById("modal-importar");
+const inputHorario = document.getElementById("input-horario");
+const importarError = document.getElementById("importar-error");
+const importarResumen = document.getElementById("importar-resumen");
+const importarAviso = document.getElementById("importar-aviso");
+const listaImportar = document.getElementById("lista-importar");
+const btnAgregarImportadas = document.getElementById("btn-agregar-importadas");
+const importarReemplazarCaja = document.getElementById("importar-reemplazar-caja");
+const importarReemplazar = document.getElementById("importar-reemplazar");
+const btnLeerConIA = document.getElementById("btn-leer-con-ia");
+const importarCargandoTitulo = document.getElementById("importar-cargando-titulo");
+const importarCargandoDetalle = document.getElementById("importar-cargando-detalle");
+const MAX_MB_IMPORTAR = 15;
+const DIAS_CORTOS = { Lunes: "Lun", Martes: "Mar", Miércoles: "Mié", Jueves: "Jue", Viernes: "Vie", Sábado: "Sáb", Domingo: "Dom" };
+let clasesImportadas = [];
+let imagenParaIA = null; // función que saca la imagen del horario (solo si hace falta la IA)
+
+function mostrarPasoImportar(paso) {
+  ["inicio", "cargando", "revision"].forEach((nombre) => {
+    document.getElementById(`importar-${nombre}`).hidden = nombre !== paso;
+  });
+}
+
+function abrirImportar(error = "") {
+  importarError.textContent = error;
+  importarError.hidden = !error;
+  mostrarPasoImportar("inicio");
+  modalImportar.hidden = false;
+}
+
+function cerrarImportar() {
+  if (!document.getElementById("importar-cargando").hidden) return; // no cortar a mitad de la lectura
+  modalImportar.hidden = true;
+  clasesImportadas = [];
+}
+
+document.getElementById("btn-abrir-importar").addEventListener("click", () => abrirImportar());
+document.getElementById("btn-cerrar-importar").addEventListener("click", cerrarImportar);
+modalImportar.addEventListener("click", (evento) => {
+  if (evento.target === modalImportar) cerrarImportar();
+});
+document.getElementById("btn-otro-horario").addEventListener("click", () => abrirImportar());
+document.getElementById("btn-elegir-horario").addEventListener("click", () => {
+  inputHorario.value = "";
+  inputHorario.click();
+});
+
+function mostrarCargandoImportar(titulo, detalle) {
+  importarCargandoTitulo.textContent = titulo;
+  importarCargandoDetalle.textContent = detalle;
+  mostrarPasoImportar("cargando");
+}
+
+// Paso 2 (respaldo): la IA gratis de Cloudflare lee la imagen del horario.
+async function leerConIA() {
+  if (!imagenParaIA) return;
+  mostrarCargandoImportar("Leyendo con IA…", "Puede tardar hasta un minuto. No cierres la app.");
+  try {
+    const datos = await imagenParaIA();
+    const token = await usuarioActual.getIdToken();
+    const respuesta = await fetch(`${URL_AVISOS}/importar-horario`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "text/plain", "X-Tipo-Archivo": "image/jpeg" },
+      body: datos,
+    });
+    const resultado = await respuesta.json().catch(() => ({}));
+    if (!respuesta.ok) {
+      abrirImportar(resultado.error || "No se pudo leer el horario. Intenta de nuevo.");
+      return;
+    }
+    if (!resultado.clases?.length) {
+      abrirImportar(resultado.aviso || "No encontramos clases. Prueba con otro PDF o una captura más clara.");
+      return;
+    }
+    clasesImportadas = resultado.clases;
+    pintarRevisionImportar(resultado.aviso, false);
+  } catch (error) {
+    console.error(error);
+    abrirImportar("No se pudo conectar. Revisa tu internet e intenta de nuevo.");
+  }
+}
+
+btnLeerConIA.addEventListener("click", leerConIA);
+
+inputHorario.addEventListener("change", async () => {
+  const archivo = inputHorario.files[0];
+  if (!archivo) return;
+  if (archivo.type !== "application/pdf" && !archivo.type.startsWith("image/")) {
+    abrirImportar("Ese archivo no es un PDF ni una imagen.");
+    return;
+  }
+  if (archivo.size > MAX_MB_IMPORTAR * 1024 * 1024) {
+    abrirImportar(`El archivo pesa más de ${MAX_MB_IMPORTAR} MB. Prueba con una captura del horario.`);
+    return;
+  }
+
+  // Paso 1: leerlo en el celular.
+  const esPdf = archivo.type === "application/pdf";
+  mostrarCargandoImportar(
+    "Leyendo tu horario…",
+    esPdf ? "Un momento…" : "La primera vez descarga el lector de imágenes (~10 MB)."
+  );
+  imagenParaIA = null;
+  try {
+    const { leerHorarioLocal } = await import("./importar-local.js?v=46");
+    const resultado = await leerHorarioLocal(archivo, (porcentaje) => {
+      importarCargandoDetalle.textContent = `Reconociendo el texto… ${porcentaje} %`;
+    });
+    imagenParaIA = resultado.imagenParaIA;
+    if (resultado.clases.length) {
+      clasesImportadas = resultado.clases;
+      pintarRevisionImportar("", true);
+      return;
+    }
+  } catch (error) {
+    console.error("Lector local:", error);
+    if (!imagenParaIA) {
+      abrirImportar("No se pudo abrir ese archivo. Revisa tu internet (la primera vez descarga el lector) e intenta de nuevo.");
+      return;
+    }
+  }
+  // No salió nada en el celular: se intenta con la IA gratis.
+  await leerConIA();
+});
+
+function claseYaExiste(nueva) {
+  const clave = (c) => `${c.materia.trim().toLowerCase()}|${c.horaInicio}|${c.horaFin}|${[...c.dias].sort().join(",")}`;
+  return clases.some((c) => clave(c) === clave(nueva));
+}
+
+function actualizarBotonImportar() {
+  const marcadas = listaImportar.querySelectorAll("input:checked").length;
+  const verbo = importarReemplazar.checked ? "Reemplazar con" : "Agregar";
+  btnAgregarImportadas.textContent = `${verbo} ${marcadas} ${marcadas === 1 ? "clase" : "clases"}`;
+  btnAgregarImportadas.disabled = marcadas === 0;
+}
+
+// Al reemplazar, las "repetidas" también cuentan (el horario viejo se borra).
+importarReemplazar.addEventListener("change", () => {
+  if (importarReemplazar.checked) {
+    listaImportar.querySelectorAll("input").forEach((casilla) => (casilla.checked = true));
+  }
+  actualizarBotonImportar();
+});
+
+// leidoEnCelular: si vino del lector del celular, se ofrece "Leer con IA"
+// por si algo salió mal.
+function pintarRevisionImportar(aviso, leidoEnCelular) {
+  btnLeerConIA.hidden = !leidoEnCelular || !imagenParaIA;
+  listaImportar.innerHTML = "";
+  clasesImportadas.forEach((clase, i) => {
+    const repetida = claseYaExiste(clase);
+    const fila = document.createElement("li");
+    const etiqueta = document.createElement("label");
+    etiqueta.className = "importar-clase";
+
+    const casilla = document.createElement("input");
+    casilla.type = "checkbox";
+    casilla.value = String(i);
+    casilla.checked = !repetida;
+    casilla.addEventListener("change", actualizarBotonImportar);
+
+    const datos = document.createElement("span");
+    datos.className = "importar-clase-datos";
+    const materia = document.createElement("strong");
+    materia.textContent = clase.materia;
+    const cuando = document.createElement("small");
+    cuando.textContent = `${clase.dias.map((d) => DIAS_CORTOS[d] || d).join(", ")} · ${clase.horaInicio}–${clase.horaFin}`;
+    datos.append(materia, cuando);
+    const extra = [clase.aula, clase.profesor].filter(Boolean).join(" · ");
+    if (extra || repetida) {
+      const detalle = document.createElement("small");
+      detalle.textContent = repetida ? "Ya está en tu horario" : extra;
+      datos.appendChild(detalle);
+    }
+
+    etiqueta.append(casilla, datos);
+    fila.appendChild(etiqueta);
+    listaImportar.appendChild(fila);
+  });
+
+  const n = clasesImportadas.length;
+  importarResumen.textContent = `Encontramos ${n} ${n === 1 ? "clase" : "clases"}. Desmarca las que no quieras; después puedes editar cualquiera tocándola.`;
+  importarAviso.textContent = aviso || "";
+  importarAviso.hidden = !aviso;
+  // Solo tiene sentido reemplazar si ya hay un horario.
+  importarReemplazar.checked = false;
+  importarReemplazarCaja.hidden = clases.length === 0;
+  actualizarBotonImportar();
+  mostrarPasoImportar("revision");
+}
+
+btnAgregarImportadas.addEventListener("click", () => {
+  const elegidas = [...listaImportar.querySelectorAll("input:checked")].map((c) => clasesImportadas[Number(c.value)]);
+  if (!elegidas.length) return;
+  const reemplazar = importarReemplazar.checked && clases.length > 0;
+  if (reemplazar && !confirm(`¿Borrar tus ${clases.length} clases actuales y dejar solo las ${elegidas.length} importadas?`)) {
+    return;
+  }
+  if (reemplazar) {
+    cancelarEdicion();
+    clases.length = 0; // mismo arreglo: el resto de la app lo sigue usando
+  }
+  const base = Date.now();
+  elegidas.forEach((clase, i) => {
+    clases.push({
+      id: String(base + i),
+      materia: clase.materia,
+      dias: clase.dias,
+      horaInicio: clase.horaInicio,
+      horaFin: clase.horaFin,
+      aula: clase.aula || "",
+      profesor: clase.profesor || "",
+    });
+  });
+  guardarDatos();
+  render();
+  modalImportar.hidden = true;
+  clasesImportadas = [];
+  alert(
+    reemplazar
+      ? `¡Listo! Tu horario ahora tiene ${elegidas.length} ${elegidas.length === 1 ? "clase" : "clases"}.`
+      : `¡Listo! Agregamos ${elegidas.length} ${elegidas.length === 1 ? "clase" : "clases"} a tu horario.`
+  );
+});
+
 // ruta: "avisar-cuenta" ({ idCuenta }) o "avisar-pago" ({ amigo }).
 async function avisarAlInstante(ruta, datos) {
   try {
@@ -3344,6 +3579,10 @@ document.getElementById("btn-agregar-clase").addEventListener("click", () => {
   abrirHojaFormulario("clase");
 });
 document.getElementById("btn-agregar-actividad").addEventListener("click", () => abrirHojaFormulario("actividad"));
+document.getElementById("btn-agregar-importar").addEventListener("click", () => {
+  modalAgregar.hidden = true;
+  abrirImportar();
+});
 modalAgregar.addEventListener("click", (evento) => {
   if (evento.target === modalAgregar) modalAgregar.hidden = true;
 });
