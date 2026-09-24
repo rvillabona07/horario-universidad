@@ -1135,39 +1135,53 @@ header h1 {
   text-align: center;
 }
 
-/* Burbujas de chat en la barra de fotos */
-.foto-anillo {
-  position: relative;
+/* ---------- Pestaña Chat ---------- */
+#vista-chat {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1.5rem;
 }
 
-.foto-insignia {
-  position: absolute;
-  right: -4px;
-  bottom: -2px;
-  width: 24px;
-  height: 24px;
+.lista-chats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: white;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
-  font-size: 0.8rem;
-}
-
-.foto-burbuja-apagada .foto-anillo {
-  background: var(--color-borde);
-}
-
-.modal-chat {
-  max-width: 380px;
-  padding-top: 2.4rem;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 .chat-item {
   display: flex;
-  gap: 0.7rem;
+  gap: 0.75rem;
+  padding: 0.8rem;
+  background: var(--color-superficie);
+  border: 1px solid var(--color-borde);
+  border-radius: 16px;
   text-align: left;
+}
+
+/* Número de mensajes nuevos sobre el ícono de Chat */
+.tab-icono {
+  position: relative;
+}
+
+.chat-sin-leer {
+  position: absolute;
+  top: -5px;
+  right: -9px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  border: 2px solid var(--color-superficie);
+  background: var(--color-peligro);
+  color: white;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 13px;
+  text-align: center;
 }
 
 .chat-mini {
@@ -1253,6 +1267,10 @@ header h1 {
 @media (max-width: 900px) {
   .barra-fotos {
     padding: 0.8rem 1rem 0.2rem;
+  }
+
+  #vista-chat {
+    padding: 1rem;
   }
 }
 

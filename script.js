@@ -860,6 +860,7 @@ const PESTANAS = [
   { tab: "tab-horario", vista: "vista-horario" },
   { tab: "tab-amigos", vista: "vista-amigos", alAbrir: () => renderAmigos() },
   { tab: "tab-cuentas", vista: "vista-cuentas", alAbrir: () => renderCuentas() },
+  { tab: "tab-chat", vista: "vista-chat", alAbrir: () => refrescarChat() },
 ];
 
 PESTANAS.forEach((pestana) => {
@@ -2076,11 +2077,10 @@ function minutosRestantes(foto) {
   return Math.max(1, Math.ceil((foto.expira - Date.now()) / 60000));
 }
 
-function burbujaFoto({ nombre, miniatura, alTocar, esBoton = false, insignia = "", apagada = false }) {
+function burbujaFoto({ nombre, miniatura, alTocar, esBoton = false }) {
   const boton = document.createElement("button");
   boton.type = "button";
   boton.className = esBoton ? "foto-burbuja foto-burbuja-subir" : "foto-burbuja";
-  if (apagada) boton.classList.add("foto-burbuja-apagada");
   const anillo = document.createElement("span");
   anillo.className = "foto-anillo";
   const mini = document.createElement("span");
@@ -2089,12 +2089,6 @@ function burbujaFoto({ nombre, miniatura, alTocar, esBoton = false, insignia = "
   // Botón "Subir foto": un + de línea en vez del emoji de cámara.
   else mini.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
   anillo.appendChild(mini);
-  if (insignia) {
-    const marca = document.createElement("span");
-    marca.className = "foto-insignia";
-    marca.textContent = insignia;
-    anillo.appendChild(marca);
-  }
   const etiqueta = document.createElement("span");
   etiqueta.className = "foto-nombre";
   etiqueta.textContent = nombre;
@@ -2110,15 +2104,12 @@ async function cargarFotos() {
   const idCarga = ++ultimaCargaFotos;
   const miUid = usuarioActual.uid;
   let documentos = [];
-  let chats = [];
   try {
-    const [mias, deAmigos, misChats] = await Promise.all([
+    const [mias, deAmigos] = await Promise.all([
       getDocs(query(collection(db, "fotos"), where("autor", "==", miUid))),
       getDocs(query(collection(db, "fotos"), where("visibles", "array-contains", miUid))),
-      obtenerMisChats(),
     ]);
     documentos = [...mias.docs, ...deAmigos.docs];
-    chats = misChats;
   } catch (error) {
     console.error("No se pudieron cargar las fotos:", error);
   }
@@ -2133,19 +2124,10 @@ async function cargarFotos() {
   });
   porAutor.forEach((fotos) => fotos.sort((a, b) => a.creada - b.creada));
 
-  // Burbujas de chat: si la foto es mía, cualquier like o comentario; si
-  // no, solo cuando comenté (mi propio like no necesita burbuja).
-  const chatsVigentes = chats
-    .filter((c) => chatVigente(c) && (c.autor === miUid || c.comentario))
-    .sort((a, b) => b.actualizada - a.actualizada);
-
   const autores = [...porAutor.keys()].sort((a, b) => (a === miUid ? -1 : b === miUid ? 1 : 0));
-  const [nombresAutores, nombresChats] = await Promise.all([
-    Promise.all(autores.map(async (autor) => (autor === miUid ? "Tú" : (await obtenerApodo(autor)) || "Amigo"))),
-    Promise.all(
-      chatsVigentes.map(async (c) => (await obtenerApodo(c.autor === miUid ? c.amigo : c.autor)) || "Amigo")
-    ),
-  ]);
+  const nombresAutores = await Promise.all(
+    autores.map(async (autor) => (autor === miUid ? "Tú" : (await obtenerApodo(autor)) || "Amigo"))
+  );
   // Si arrancó otra carga mientras tanto, esa pinta (así no se duplican).
   if (idCarga !== ultimaCargaFotos) return;
 
@@ -2159,19 +2141,6 @@ async function cargarFotos() {
         nombre: nombresAutores[i],
         miniatura: fotos[fotos.length - 1].imagen,
         alTocar: () => abrirVisor(fotos, nombresAutores[i], autor === miUid),
-      })
-    );
-  });
-
-  chatsVigentes.forEach((chat, i) => {
-    barraFotos.appendChild(
-      burbujaFoto({
-        nombre: nombresChats[i],
-        miniatura: chat.miniatura,
-        insignia: chat.comentario ? "💬" : "❤️",
-        // Apagada si lo último lo hice yo (no hay nada nuevo para mí).
-        apagada: chat.ultimoDe === miUid,
-        alTocar: () => abrirChat(chat, nombresChats[i]),
       })
     );
   });
@@ -2417,7 +2386,7 @@ visorReaccion.addEventListener("submit", async (evento) => {
   if (await guardarReaccion({ comentario: texto })) {
     visorComentario.blur();
     avisarAlInstante("avisar-chat", { idChat: idChat(foto.id, usuarioActual.uid) });
-    cargarFotos(); // aparece la burbuja de este chat
+    refrescarChat(); // aparece en la pestaña Chat
   }
   visorEnviar.disabled = false;
   pintarMiReaccion();
@@ -2471,14 +2440,17 @@ document.getElementById("visor-panel-cerrar").addEventListener("click", () => {
   visorPanelVistas.hidden = true;
 });
 
-// ---------- Burbujas de chat (duran 30 min) ----------
-// Cada like/comentario aparece como una burbuja en la barra de fotos,
-// junto a las fotos. Dura 30 minutos desde el último movimiento (el
-// comentario o la respuesta) y después desaparece; check-clases.js las borra.
+// ---------- Pestaña Chat (los mensajes duran 30 min) ----------
+// Los me gusta, comentarios y respuestas de las fotos llegan a la pestaña
+// Chat de la barra de abajo. Cada uno dura 30 minutos desde el último
+// movimiento y después desaparece (check-clases.js los borra de Firebase).
+// El número rojo en el ícono cuenta lo nuevo desde la última vez que se abrió.
 
 const DURACION_CHAT = 30 * 60 * 1000;
-const modalChat = document.getElementById("modal-chat");
-const modalChatContenido = document.getElementById("modal-chat-contenido");
+const vistaChat = document.getElementById("vista-chat");
+const listaChats = document.getElementById("lista-chats");
+const chatSinLeer = document.getElementById("chat-sin-leer");
+let ultimoRenderChat = 0;
 
 function chatTieneAlgo(chat) {
   return chat.like || chat.comentario;
@@ -2488,20 +2460,68 @@ function chatVigente(chat) {
   return chatTieneAlgo(chat) && chat.actualizada + DURACION_CHAT > Date.now();
 }
 
-function abrirChat(chat, nombreOtro) {
-  modalChatContenido.replaceChildren(tarjetaChat(chat, nombreOtro));
-  modalChat.hidden = false;
+// Si la foto es mía: cualquier me gusta o comentario. Si no: solo cuando
+// comenté (mi propio me gusta no necesita conversación).
+function chatsParaMi(chats) {
+  const miUid = usuarioActual.uid;
+  return chats
+    .filter((c) => chatVigente(c) && (c.autor === miUid || c.comentario))
+    .sort((a, b) => b.actualizada - a.actualizada);
 }
 
-function cerrarChat() {
-  modalChat.hidden = true;
-  modalChatContenido.innerHTML = "";
+function claveChatVisto() {
+  return `chatVisto_${usuarioActual.uid}`;
 }
 
-document.getElementById("btn-cerrar-chat").addEventListener("click", cerrarChat);
-modalChat.addEventListener("click", (evento) => {
-  if (evento.target === modalChat) cerrarChat();
-});
+function leerChatVisto() {
+  try {
+    return Number(localStorage.getItem(claveChatVisto())) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function marcarChatVisto() {
+  try {
+    localStorage.setItem(claveChatVisto(), String(Date.now()));
+  } catch {
+    // Sin almacenamiento: el número simplemente no se recuerda.
+  }
+  chatSinLeer.hidden = true;
+}
+
+function pintarContadorChat(chats) {
+  const visto = leerChatVisto();
+  const nuevos = chats.filter((c) => c.ultimoDe !== usuarioActual.uid && c.actualizada > visto).length;
+  chatSinLeer.textContent = nuevos > 9 ? "9+" : String(nuevos);
+  chatSinLeer.hidden = nuevos === 0;
+}
+
+// Trae los chats, actualiza el número rojo y, si la pestaña está abierta,
+// repinta la lista (salvo que estés escribiendo una respuesta).
+async function refrescarChat() {
+  if (!usuarioActual) return;
+  const idRender = ++ultimoRenderChat;
+  const miUid = usuarioActual.uid;
+  const chats = chatsParaMi(await obtenerMisChats());
+  if (idRender !== ultimoRenderChat) return;
+
+  if (vistaChat.hidden) {
+    pintarContadorChat(chats);
+    return;
+  }
+  marcarChatVisto();
+  if (listaChats.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
+
+  const nombres = await Promise.all(
+    chats.map(async (c) => (await obtenerApodo(c.autor === miUid ? c.amigo : c.autor)) || "Amigo")
+  );
+  if (idRender !== ultimoRenderChat) return;
+  listaChats.replaceChildren(...chats.map((c, i) => tarjetaChat(c, nombres[i])));
+  if (!chats.length) {
+    mensajeVacio(listaChats, "No hay mensajes. Aquí llegan los me gusta y comentarios de las fotos.");
+  }
+}
 
 function burbujaChat(texto, mia) {
   const burbuja = document.createElement("p");
@@ -2521,8 +2541,8 @@ async function responderChat(chat, input, boton) {
       ultimoDe: usuarioActual.uid,
     });
     avisarAlInstante("avisar-chat", { idChat: chat.id });
-    cerrarChat();
-    cargarFotos();
+    input.blur();
+    refrescarChat();
   } catch (error) {
     console.error(error);
     boton.disabled = false;
@@ -2533,7 +2553,7 @@ async function responderChat(chat, input, boton) {
 function tarjetaChat(chat, nombreOtro) {
   const miUid = usuarioActual.uid;
   const esMiFoto = chat.autor === miUid;
-  const li = document.createElement("div");
+  const li = document.createElement("li");
   li.className = "chat-item";
 
   const mini = document.createElement("img");
@@ -2575,7 +2595,7 @@ function tarjetaChat(chat, nombreOtro) {
     const input = document.createElement("input");
     input.type = "text";
     input.maxLength = 200;
-    input.placeholder = `Responder a ${nombreOtro}…`;
+    input.placeholder = "Responder…";
     input.autocomplete = "off";
     const boton = document.createElement("button");
     boton.type = "submit";
@@ -2599,19 +2619,27 @@ function tarjetaChat(chat, nombreOtro) {
 
 function iniciarFotos() {
   cargarFotos();
+  refrescarChat();
   clearInterval(temporizadorFotos);
-  temporizadorFotos = setInterval(cargarFotos, 60 * 1000);
+  temporizadorFotos = setInterval(() => {
+    cargarFotos();
+    refrescarChat(); // llegan los nuevos y se van los de más de 30 min
+  }, 60 * 1000);
 }
 
 function detenerFotos() {
   clearInterval(temporizadorFotos);
   barraFotos.innerHTML = "";
+  listaChats.innerHTML = "";
+  chatSinLeer.hidden = true;
   cerrarVisor();
-  cerrarChat();
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && usuarioActual) cargarFotos();
+  if (document.visibilityState === "visible" && usuarioActual) {
+    cargarFotos();
+    refrescarChat();
+  }
 });
 
 // Qué hacer cuando la app se abre desde una notificación (por la URL o
@@ -2620,13 +2648,14 @@ function manejarAccionDeNotificacion(url) {
   if (!url) return;
   if (url.includes("foto=1")) modalFotoSalida.hidden = false;
   if (url.includes("ver=fotos")) cargarFotos();
+  if (url.includes("ver=chat")) document.getElementById("tab-chat").click();
 }
 
 let accionPendiente = null;
 (function leerAccionDeLaUrl() {
   const parametros = new URLSearchParams(location.search);
   if (!parametros.has("foto") && !parametros.has("ver")) return;
-  accionPendiente = parametros.has("foto") ? "foto=1" : "ver=fotos";
+  accionPendiente = parametros.has("foto") ? "foto=1" : parametros.get("ver") === "chat" ? "ver=chat" : "ver=fotos";
   parametros.delete("foto");
   parametros.delete("ver");
   const resto = parametros.toString();
