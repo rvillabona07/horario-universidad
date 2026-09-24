@@ -12,7 +12,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="ParchApp" />
   <!-- Al publicar cambios, sube este número (aquí y en script.js abajo) -->
-  <link rel="stylesheet" href="style.css?v=22" />
+  <link rel="stylesheet" href="style.css?v=23" />
 </head>
 <body>
   <header>
@@ -169,7 +169,9 @@
           Contraseña
           <input type="password" id="auth-password" required minlength="6" />
         </label>
+        <button type="button" id="btn-olvide-contrasena" class="btn-olvide-contrasena">¿Olvidaste tu contraseña?</button>
         <p id="auth-error" class="auth-error" hidden></p>
+        <p id="auth-mensaje" class="auth-mensaje" hidden></p>
         <button type="submit" id="btn-auth-principal">Iniciar sesión</button>
       </form>
       <p class="auth-toggle">
@@ -361,6 +363,6 @@
     </div>
   </main>
 
-  <script type="module" src="script.js?v=22"></script>
+  <script type="module" src="script.js?v=23"></script>
 </body>
 </html>

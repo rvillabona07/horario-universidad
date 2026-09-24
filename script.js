@@ -5,6 +5,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore,
@@ -71,6 +72,7 @@ document.addEventListener("visibilitychange", () => {
 
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
+auth.languageCode = "es"; // correos de Firebase (p. ej. recuperar contraseña) en español
 const db = getFirestore(firebaseApp);
 
 const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
@@ -698,7 +700,40 @@ function mostrarErrorAuth(mensaje) {
 function limpiarErrorAuth() {
   authError.hidden = true;
   authError.textContent = "";
+  authMensaje.hidden = true;
 }
+
+// ---------- Recuperar contraseña ----------
+
+const btnOlvideContrasena = document.getElementById("btn-olvide-contrasena");
+const authMensaje = document.getElementById("auth-mensaje");
+
+btnOlvideContrasena.addEventListener("click", async () => {
+  limpiarErrorAuth();
+  const correo = authEmail.value.trim();
+  if (!correo) {
+    mostrarErrorAuth("Escribe tu correo arriba y vuelve a tocar «¿Olvidaste tu contraseña?».");
+    authEmail.focus();
+    return;
+  }
+
+  btnOlvideContrasena.disabled = true;
+  try {
+    await sendPasswordResetEmail(auth, correo);
+    // Firebase no dice si el correo existe (por seguridad), así que el
+    // mensaje es el mismo en ambos casos.
+    authMensaje.textContent = `📧 Si hay una cuenta con ${correo}, te llegó un correo para crear una contraseña nueva. Revisa también la carpeta de spam.`;
+    authMensaje.hidden = false;
+  } catch (error) {
+    mostrarErrorAuth(
+      error.code === "auth/too-many-requests"
+        ? "Pediste demasiados correos seguidos. Espera unos minutos e intenta de nuevo."
+        : traducirErrorAuth(error.code)
+    );
+  } finally {
+    btnOlvideContrasena.disabled = false;
+  }
+});
 
 const MENSAJES_ERROR_AUTH = {
   "auth/invalid-email": "El correo no es válido.",
@@ -718,6 +753,7 @@ function actualizarModoAuth() {
   limpiarErrorAuth();
   if (modoAuth === "login") {
     authCard.classList.remove("auth-card-registro");
+    btnOlvideContrasena.hidden = false;
     authTitulo.textContent = "Inicia sesión";
     authSubtexto.textContent = "Para guardar tu horario y verlo en todos tus dispositivos";
     btnAuthPrincipal.textContent = "Iniciar sesión";
@@ -725,6 +761,7 @@ function actualizarModoAuth() {
     btnCambiarModo.textContent = "Crea una aquí";
   } else {
     authCard.classList.add("auth-card-registro");
+    btnOlvideContrasena.hidden = true;
     authTitulo.textContent = "Crea tu cuenta";
     authSubtexto.textContent = "Regístrate para guardar tu horario y verlo en todos tus dispositivos";
     btnAuthPrincipal.textContent = "Crear cuenta";
