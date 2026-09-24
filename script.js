@@ -227,6 +227,33 @@ if ("Notification" in window && "serviceWorker" in navigator) {
   }
 }
 
+// Guarda en la cuenta el token de este dispositivo para poder mandarle avisos.
+async function registrarDispositivo() {
+  const registro = await navigator.serviceWorker.register("firebase-messaging-sw.js");
+  const token = await getToken(messaging, {
+    vapidKey: VAPID_KEY,
+    serviceWorkerRegistration: registro,
+  });
+  await setDoc(doc(db, "horarios", usuarioActual.uid), { fcmToken: token }, { merge: true });
+  btnNotificaciones.title = "Notificaciones activadas";
+  btnNotificaciones.classList.add("btn-icono-activo");
+}
+
+// Pide el permiso y registra el dispositivo. Devuelve "ok", "negado" o "error".
+async function activarNotificaciones() {
+  try {
+    const permiso = await Notification.requestPermission();
+    if (permiso !== "granted") return "negado";
+    await registrarDispositivo();
+    return "ok";
+  } catch (error) {
+    console.error(error);
+    return "error";
+  }
+}
+
+const MENSAJE_ACTIVADAS = "¡Listo! Te avisaremos antes de cada clase, cuando tus amigos salgan y cuando te dividan una cuenta.";
+
 btnNotificaciones.addEventListener("click", async () => {
   if (!usuarioActual) {
     alert("Inicia sesión primero para activar las notificaciones.");
@@ -234,33 +261,208 @@ btnNotificaciones.addEventListener("click", async () => {
   }
 
   if (!messaging) {
-    alert("Tu navegador no soporta notificaciones.");
+    mostrarAvisoNotificaciones(esIphoneSinInstalar() ? "iphone" : "sin-soporte");
+    return;
+  }
+
+  const resultado = await activarNotificaciones();
+  if (resultado === "ok") alert(MENSAJE_ACTIVADAS);
+  else if (resultado === "negado") mostrarAvisoNotificaciones("bloqueadas");
+  else alert("No se pudo activar la notificación. Intenta de nuevo.");
+});
+
+// ---------- Aviso para activar notificaciones al entrar ----------
+
+const modalNotificaciones = document.getElementById("modal-notificaciones");
+const notifTitulo = document.getElementById("notif-titulo");
+const notifTexto = document.getElementById("notif-texto");
+const btnNotifActivar = document.getElementById("btn-notif-activar");
+const btnNotifLuego = document.getElementById("btn-notif-luego");
+const CLAVE_NOTIF_LUEGO = "horarioNotifLuegoHasta";
+const UN_DIA = 24 * 60 * 60 * 1000;
+
+function esIos() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+
+function estaInstalada() {
+  return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+}
+
+function esIphoneSinInstalar() {
+  return esIos() && !estaInstalada();
+}
+
+const TEXTOS_NOTIFICACIONES = {
+  pedir: {
+    titulo: "Activa las notificaciones",
+    texto:
+      "Así te avisamos 5 minutos antes de cada clase, cuando tus amigos salen de clase y cuando alguien divide una cuenta contigo.",
+    activar: true,
+  },
+  bloqueadas: {
+    titulo: "Las notificaciones están bloqueadas",
+    texto:
+      "Para recibir los avisos, permite las notificaciones de esta página en la configuración del navegador (el candado 🔒 junto a la dirección → Notificaciones → Permitir) y vuelve a entrar.",
+    activar: false,
+  },
+  iphone: {
+    titulo: "Instala la app para recibir avisos",
+    texto:
+      "En iPhone los avisos solo funcionan con la app en la pantalla de inicio: toca Compartir ⬆️ → «Agregar a inicio», ábrela desde ahí y activa las notificaciones.",
+    activar: false,
+  },
+  "sin-soporte": {
+    titulo: "Tu navegador no tiene notificaciones",
+    texto: "Prueba abriendo la app en Chrome para poder recibir los avisos.",
+    activar: false,
+  },
+};
+
+function mostrarAvisoNotificaciones(tipo) {
+  const contenido = TEXTOS_NOTIFICACIONES[tipo];
+  notifTitulo.textContent = contenido.titulo;
+  notifTexto.textContent = contenido.texto;
+  btnNotifActivar.hidden = !contenido.activar;
+  btnNotifLuego.textContent = contenido.activar ? "Ahora no" : "Entendido";
+  modalNotificaciones.hidden = false;
+}
+
+function cerrarAvisoNotificaciones() {
+  modalNotificaciones.hidden = true;
+  // No volver a insistir hasta mañana.
+  try {
+    localStorage.setItem(CLAVE_NOTIF_LUEGO, String(Date.now() + UN_DIA));
+  } catch {}
+}
+
+btnNotifLuego.addEventListener("click", cerrarAvisoNotificaciones);
+
+btnNotifActivar.addEventListener("click", async () => {
+  btnNotifActivar.disabled = true;
+  const resultado = await activarNotificaciones();
+  btnNotifActivar.disabled = false;
+  if (resultado === "ok") {
+    modalNotificaciones.hidden = true;
+    alert(MENSAJE_ACTIVADAS);
+  } else if (resultado === "negado") {
+    mostrarAvisoNotificaciones("bloqueadas");
+  } else {
+    alert("No se pudo activar la notificación. Intenta de nuevo.");
+  }
+});
+
+// Al entrar: si ya dio permiso, registra este dispositivo sin preguntar;
+// si no, muestra el aviso (máximo una vez al día si dijo "Ahora no").
+async function revisarNotificacionesAlEntrar() {
+  if (messaging && Notification.permission === "granted") {
+    try {
+      await registrarDispositivo();
+    } catch (error) {
+      console.error("No se pudo registrar el dispositivo:", error);
+    }
     return;
   }
 
   try {
-    const permiso = await Notification.requestPermission();
-    if (permiso !== "granted") {
-      alert("No diste permiso de notificaciones. Puedes activarlo luego desde este mismo botón.");
-      return;
-    }
+    if (Date.now() < Number(localStorage.getItem(CLAVE_NOTIF_LUEGO) || 0)) return;
+  } catch {}
 
-    const registro = await navigator.serviceWorker.register("firebase-messaging-sw.js");
-    const token = await getToken(messaging, {
-      vapidKey: VAPID_KEY,
-      serviceWorkerRegistration: registro,
-    });
+  if (!messaging) {
+    if (esIphoneSinInstalar()) mostrarAvisoNotificaciones("iphone");
+    return;
+  }
+  mostrarAvisoNotificaciones(Notification.permission === "denied" ? "bloqueadas" : "pedir");
+}
 
-    await setDoc(doc(db, "horarios", usuarioActual.uid), { fcmToken: token }, { merge: true });
+// ---------- Instalar como app (PWA) ----------
+// En Android/Chrome el navegador nos da el evento "beforeinstallprompt" y
+// con un toque se instala. En iPhone no existe: mostramos los pasos.
 
-    btnNotificaciones.title = "Notificaciones activadas";
-    btnNotificaciones.classList.add("btn-icono-activo");
-    alert("¡Listo! Vas a recibir un aviso 5 minutos antes de cada clase.");
-  } catch (error) {
-    console.error(error);
-    alert("No se pudo activar la notificación. Intenta de nuevo.");
+const bannerInstalar = document.getElementById("banner-instalar");
+const modalInstalar = document.getElementById("modal-instalar");
+const pasosInstalar = document.getElementById("pasos-instalar");
+const CLAVE_BANNER_OCULTO = "horarioBannerInstalarHasta";
+let eventoInstalar = null;
+
+function mostrarBannerInstalar() {
+  if (estaInstalada()) return;
+  try {
+    if (Date.now() < Number(localStorage.getItem(CLAVE_BANNER_OCULTO) || 0)) return;
+  } catch {}
+  bannerInstalar.hidden = false;
+}
+
+function mostrarPasosInstalar() {
+  const pasos = esIos()
+    ? [
+        "Abre este link en Safari.",
+        "Toca el botón Compartir ⬆️ (abajo en el centro).",
+        "Baja y toca «Agregar a inicio».",
+        "Toca «Agregar». Listo: ábrela desde el ícono de tu pantalla.",
+      ]
+    : [
+        "Abre este link en Chrome.",
+        "Toca el menú ⋮ del navegador (arriba a la derecha).",
+        "Toca «Instalar app» o «Agregar a la pantalla principal».",
+        "Confirma. Listo: ábrela desde el ícono de tu pantalla.",
+      ];
+  pasosInstalar.innerHTML = "";
+  pasos.forEach((paso) => {
+    const li = document.createElement("li");
+    li.textContent = paso;
+    pasosInstalar.appendChild(li);
+  });
+  modalInstalar.hidden = false;
+}
+
+window.addEventListener("beforeinstallprompt", (evento) => {
+  evento.preventDefault();
+  eventoInstalar = evento;
+  mostrarBannerInstalar();
+});
+
+window.addEventListener("appinstalled", () => {
+  eventoInstalar = null;
+  bannerInstalar.hidden = true;
+});
+
+document.getElementById("btn-instalar").addEventListener("click", async () => {
+  if (eventoInstalar) {
+    eventoInstalar.prompt();
+    const { outcome } = await eventoInstalar.userChoice;
+    eventoInstalar = null;
+    if (outcome === "accepted") bannerInstalar.hidden = true;
+  } else {
+    mostrarPasosInstalar();
   }
 });
+
+document.getElementById("btn-cerrar-banner").addEventListener("click", () => {
+  bannerInstalar.hidden = true;
+  try {
+    localStorage.setItem(CLAVE_BANNER_OCULTO, String(Date.now() + 3 * UN_DIA));
+  } catch {}
+});
+
+document.getElementById("btn-cerrar-instalar").addEventListener("click", () => {
+  modalInstalar.hidden = true;
+});
+
+modalInstalar.addEventListener("click", (evento) => {
+  if (evento.target === modalInstalar) modalInstalar.hidden = true;
+});
+
+// El banner sale siempre que la app no esté instalada: si el navegador
+// no da "beforeinstallprompt" (iPhone, Samsung Internet, Firefox...), el
+// botón muestra los pasos para instalarla a mano.
+mostrarBannerInstalar();
+
+// El service worker (el mismo de las notificaciones) ayuda a que el
+// navegador ofrezca instalar la app.
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("firebase-messaging-sw.js").catch(() => {});
+}
 
 const MESES = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -456,6 +658,7 @@ onAuthStateChanged(auth, async (user) => {
     pendientes = datos.pendientes;
     render();
     publicarHorarioCompartido();
+    revisarNotificacionesAlEntrar();
   } else {
     appMain.hidden = true;
     authPanel.hidden = false;

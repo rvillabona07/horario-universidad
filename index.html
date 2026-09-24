@@ -4,8 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Mi Horario</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#7c3aed" />
+  <link rel="icon" type="image/png" href="icono-192.png" />
+  <link rel="apple-touch-icon" href="icono-180.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Mi Horario" />
   <!-- Al publicar cambios, sube este número (aquí y en script.js abajo) -->
-  <link rel="stylesheet" href="style.css?v=12" />
+  <link rel="stylesheet" href="style.css?v=15" />
 </head>
 <body>
   <header>
@@ -19,6 +26,21 @@
       </div>
     </div>
   </header>
+
+  <div id="banner-instalar" class="banner-instalar" hidden>
+    <span class="banner-instalar-texto">📲 Instala <strong>Mi Horario</strong> en tu celular y ábrela como una app</span>
+    <button type="button" id="btn-instalar" class="btn-instalar">Instalar</button>
+    <button type="button" id="btn-cerrar-banner" class="btn-cerrar-banner" aria-label="Cerrar">×</button>
+  </div>
+
+  <div id="modal-instalar" class="modal-overlay" hidden>
+    <div class="modal-colores modal-instalar">
+      <button type="button" id="btn-cerrar-instalar" class="btn-cerrar-modal" title="Cerrar">×</button>
+      <div class="modal-notif-icono">📲</div>
+      <h2>Instala Mi Horario</h2>
+      <ol id="pasos-instalar" class="pasos-instalar"></ol>
+    </div>
+  </div>
 
   <div id="modal-colores" class="modal-overlay" hidden>
     <div class="modal-colores">
@@ -42,6 +64,18 @@
           <button type="submit" id="btn-guardar-apodo">Guardar</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div id="modal-notificaciones" class="modal-overlay" hidden>
+    <div class="modal-colores modal-notificaciones">
+      <div class="modal-notif-icono">🔔</div>
+      <h2 id="notif-titulo">Activa las notificaciones</h2>
+      <p id="notif-texto" class="modal-colores-subtexto"></p>
+      <div class="notif-botones">
+        <button type="button" id="btn-notif-activar" class="btn-notif-activar">Activar notificaciones</button>
+        <button type="button" id="btn-notif-luego" class="btn-notif-luego">Ahora no</button>
+      </div>
     </div>
   </div>
 
@@ -281,6 +315,6 @@
     </div>
   </main>
 
-  <script type="module" src="script.js?v=12"></script>
+  <script type="module" src="script.js?v=15"></script>
 </body>
 </html>
