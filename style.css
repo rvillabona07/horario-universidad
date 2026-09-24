@@ -806,6 +806,22 @@ header h1 {
   }
 }
 
+.pista-editar {
+  margin: 0 0 -0.8rem;
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
+.clase-editable {
+  cursor: pointer;
+  transition: filter 0.12s ease;
+}
+
+.clase-editable:hover,
+.clase-editable:active {
+  filter: brightness(1.08);
+}
+
 .enlace-caja {
   background: #f1e9ff;
   border-radius: 8px;
@@ -1456,7 +1472,8 @@ button {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
-.btn-borrar-bloque {
+.btn-borrar-bloque,
+.btn-editar-bloque {
   position: absolute;
   top: 2px;
   right: 2px;
@@ -1475,8 +1492,44 @@ button {
   cursor: pointer;
 }
 
+.btn-editar-bloque {
+  right: 21px;
+  font-size: 10px;
+}
+
 .btn-borrar-bloque:hover {
   background: var(--color-peligro);
+}
+
+.btn-editar-bloque:hover {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* Deja espacio para los dos botones en las clases propias. */
+.bloque-clase.clase-editable {
+  padding-right: 2.5rem;
+}
+
+.agenda-clase.clase-editable {
+  padding-right: 4.2rem;
+}
+
+/* En la vista del celular, botones más grandes para el dedo. */
+.agenda-clase .btn-borrar-bloque,
+.agenda-clase .btn-editar-bloque {
+  top: 8px;
+  width: 26px;
+  height: 26px;
+  font-size: 14px;
+}
+
+.agenda-clase .btn-borrar-bloque {
+  right: 8px;
+}
+
+.agenda-clase .btn-editar-bloque {
+  right: 40px;
+  font-size: 13px;
 }
 
 .bloque-clase strong {

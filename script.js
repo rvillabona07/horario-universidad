@@ -619,7 +619,6 @@ function formatearRangoSemana() {
 document.getElementById("rango-semana").textContent = `Semana del ${formatearRangoSemana()}`;
 
 const grid = document.getElementById("grid-horario");
-const lista = document.getElementById("lista-clases");
 const form = document.getElementById("form-clase");
 const btnCancelar = document.getElementById("btn-cancelar");
 const btnGuardar = document.getElementById("btn-guardar");
@@ -2034,15 +2033,7 @@ function pintarClasesEnGrid(grid = document.getElementById("grid-horario"), list
         ${clase.profesor ? `<span>${escaparHtml(clase.profesor)}</span>` : ""}
       `;
 
-      if (editable) {
-        const btnX = document.createElement("button");
-        btnX.type = "button";
-        btnX.className = "btn-borrar-bloque";
-        btnX.textContent = "×";
-        btnX.title = "Eliminar esta clase";
-        btnX.addEventListener("click", () => eliminarClase(clase.id));
-        bloque.appendChild(btnX);
-      }
+      if (editable) hacerEditable(bloque, clase);
 
       grid.appendChild(bloque);
     });
@@ -2089,15 +2080,7 @@ function pintarAgendaMovil(
         ${clase.profesor ? `<span>${escaparHtml(clase.profesor)}</span>` : ""}
       `;
 
-      if (editable) {
-        const btnX = document.createElement("button");
-        btnX.type = "button";
-        btnX.className = "btn-borrar-bloque";
-        btnX.textContent = "×";
-        btnX.title = "Eliminar esta clase";
-        btnX.addEventListener("click", () => eliminarClase(clase.id));
-        item.appendChild(btnX);
-      }
+      if (editable) hacerEditable(item, clase);
 
       grupo.appendChild(item);
     });
@@ -2106,60 +2089,34 @@ function pintarAgendaMovil(
   });
 }
 
-function pintarLista() {
-  lista.innerHTML = "";
+// En el calendario propio: el ✏️ (o tocar la clase) la abre para editar y
+// la × la elimina (con confirmación).
+function hacerEditable(elemento, clase) {
+  elemento.classList.add("clase-editable");
+  elemento.title = "Toca para editar";
+  elemento.addEventListener("click", () => iniciarEdicion(clase.id));
 
-  if (clases.length === 0) {
-    const vacio = document.createElement("li");
-    vacio.className = "mensaje-vacio";
-    vacio.textContent = "Todavía no agregaste ninguna clase.";
-    lista.appendChild(vacio);
-    return;
-  }
-
-  const primerDiaIndice = (clase) =>
-    Math.min(...clase.dias.map((d) => DIAS.indexOf(d)).filter((i) => i !== -1));
-
-  const ordenadas = [...clases].sort((a, b) => {
-    const diaDiff = primerDiaIndice(a) - primerDiaIndice(b);
-    if (diaDiff !== 0) return diaDiff;
-    return minutosDesde(a.horaInicio) - minutosDesde(b.horaInicio);
+  const btnEditar = document.createElement("button");
+  btnEditar.type = "button";
+  btnEditar.className = "btn-editar-bloque";
+  btnEditar.textContent = "✎";
+  btnEditar.title = "Editar esta clase";
+  btnEditar.addEventListener("click", (evento) => {
+    evento.stopPropagation();
+    iniciarEdicion(clase.id);
   });
+  elemento.appendChild(btnEditar);
 
-  ordenadas.forEach((clase) => {
-    const li = document.createElement("li");
-
-    const punto = document.createElement("span");
-    punto.className = "punto-color";
-    punto.style.background = colorParaMateria(clase.materia);
-
-    const info = document.createElement("span");
-    info.className = "info-clase";
-    info.textContent = `${clase.materia} — ${clase.dias.join(", ")} ${clase.horaInicio}-${clase.horaFin}${
-      clase.aula ? " · " + clase.aula : ""
-    }${clase.profesor ? " · " + clase.profesor : ""}`;
-
-    const acciones = document.createElement("span");
-    acciones.className = "acciones-clase";
-
-    const btnEditar = document.createElement("button");
-    btnEditar.className = "btn-editar";
-    btnEditar.textContent = "Editar";
-    btnEditar.addEventListener("click", () => iniciarEdicion(clase.id));
-
-    const btnEliminar = document.createElement("button");
-    btnEliminar.className = "btn-eliminar";
-    btnEliminar.textContent = "Eliminar";
-    btnEliminar.addEventListener("click", () => eliminarClase(clase.id));
-
-    acciones.appendChild(btnEditar);
-    acciones.appendChild(btnEliminar);
-
-    li.appendChild(punto);
-    li.appendChild(info);
-    li.appendChild(acciones);
-    lista.appendChild(li);
+  const btnX = document.createElement("button");
+  btnX.type = "button";
+  btnX.className = "btn-borrar-bloque";
+  btnX.textContent = "×";
+  btnX.title = "Eliminar esta clase";
+  btnX.addEventListener("click", (evento) => {
+    evento.stopPropagation(); // que no abra también la edición
+    if (confirm(`¿Eliminar ${clase.materia} de tu horario?`)) eliminarClase(clase.id);
   });
+  elemento.appendChild(btnX);
 }
 
 function escaparHtml(texto) {
@@ -2285,7 +2242,6 @@ function render() {
   construirEsqueletoGrid();
   pintarClasesEnGrid();
   pintarAgendaMovil();
-  pintarLista();
   actualizarOpcionesMateriaPendiente();
   pintarRecordatoriosSemana();
   pintarListaPendientes();
