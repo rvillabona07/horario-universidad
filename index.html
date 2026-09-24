@@ -12,7 +12,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="ParchApp" />
   <!-- Al publicar cambios, sube este número (aquí y en script.js abajo) -->
-  <link rel="stylesheet" href="style.css?v=28" />
+  <link rel="stylesheet" href="style.css?v=29" />
 </head>
 <body>
   <header>
@@ -23,14 +23,34 @@
       </button>
     </div>
     <div class="header-derecha">
-      <button id="btn-colores" type="button" class="btn-icono" title="Personalizar colores">🎨</button>
-      <button id="btn-notificaciones" type="button" class="btn-icono" title="Notificaciones">🔔</button>
       <div id="usuario-info" class="usuario-info" hidden>
-        <button id="usuario-email" type="button" title="Cambiar tu apodo"></button>
-        <button id="btn-logout" type="button">Cerrar sesión</button>
+        <button id="btn-menu-usuario" type="button" class="btn-menu-usuario" title="Tu cuenta y ajustes">?</button>
       </div>
     </div>
   </header>
+
+  <div id="modal-menu" class="modal-overlay modal-hoja" hidden>
+    <div class="modal-colores hoja-menu">
+      <div class="menu-perfil">
+        <span id="menu-avatar" class="menu-avatar">?</span>
+        <div>
+          <button id="usuario-email" type="button" class="menu-nombre" title="Cambiar tu apodo"></button>
+          <small>Toca tu nombre para cambiar tu apodo</small>
+        </div>
+      </div>
+      <button id="btn-colores" type="button" class="menu-opcion">🎨 <span>Colores de la app</span></button>
+      <button id="btn-notificaciones" type="button" class="menu-opcion">🔔 <span>Notificaciones</span></button>
+      <button id="btn-logout" type="button" class="menu-opcion menu-opcion-salir">🚪 <span>Cerrar sesión</span></button>
+    </div>
+  </div>
+
+  <div id="modal-agregar" class="modal-overlay modal-hoja" hidden>
+    <div class="modal-colores hoja-menu">
+      <h2>¿Qué quieres agregar?</h2>
+      <button type="button" id="btn-agregar-clase" class="menu-opcion">📚 <span>Una clase<small>Materia, días y horas</small></span></button>
+      <button type="button" id="btn-agregar-actividad" class="menu-opcion">📝 <span>Una actividad<small>Parcial, taller o tarea con fecha</small></span></button>
+    </div>
+  </div>
 
   <div id="banner-instalar" class="banner-instalar" hidden>
     <span class="banner-instalar-texto">📲 Instala <strong>ParchApp</strong> en tu celular y ábrela como una app</span>
@@ -190,14 +210,17 @@
     <div id="barra-fotos" class="barra-fotos"></div>
     <input type="file" id="input-foto" accept="image/*" capture="environment" hidden />
 
-    <div class="tabs-principales">
-      <button type="button" id="tab-horario" class="tab-boton tab-activo"><svg class="icono-calendario" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="5" width="26" height="24" rx="5" fill="#ffffff" stroke="#e5e7eb"/><path d="M3 10a5 5 0 0 1 5-5h16a5 5 0 0 1 5 5v2.5H3z" fill="#ef4444"/><text x="16" y="26.2" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-weight="800" font-size="14" fill="#1f2937">7</text></svg> Horario</button>
-      <button type="button" id="tab-amigos" class="tab-boton">👥 Amigos</button>
-      <button type="button" id="tab-cuentas" class="tab-boton">💸 Cuentas</button>
-    </div>
+    <nav class="tabs-principales">
+      <button type="button" id="tab-horario" class="tab-boton tab-activo"><span class="tab-icono"><svg class="icono-calendario" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="5" width="26" height="24" rx="5" fill="#ffffff" stroke="#e5e7eb"/><path d="M3 10a5 5 0 0 1 5-5h16a5 5 0 0 1 5 5v2.5H3z" fill="#ef4444"/><text x="16" y="26.2" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-weight="800" font-size="14" fill="#1f2937">7</text></svg></span><span>Horario</span></button>
+      <button type="button" id="tab-amigos" class="tab-boton"><span class="tab-icono">👥</span><span>Amigos</span></button>
+      <button type="button" id="tab-cuentas" class="tab-boton"><span class="tab-icono">💸</span><span>Cuentas</span></button>
+    </nav>
 
     <div id="vista-horario">
+    <button type="button" id="btn-flotante-agregar" class="btn-flotante-agregar" title="Agregar clase o actividad" aria-label="Agregar">+</button>
+    <div id="fondo-hoja-formularios" class="fondo-hoja-formularios"></div>
     <div class="columna-formularios">
+    <button type="button" id="btn-cerrar-hoja-formularios" class="btn-cerrar-modal btn-cerrar-hoja" title="Cerrar">×</button>
     <details class="panel-formulario" id="detalle-clase">
       <summary id="form-titulo">Agregar clase</summary>
       <form id="form-clase">
@@ -282,7 +305,7 @@
     <section class="panel-horario">
       <div class="barra-horario">
         <p id="rango-semana" class="rango-semana"></p>
-        <button type="button" id="btn-abrir-pdf" class="btn-abrir-pdf">📄 Descargar PDF</button>
+        <button type="button" id="btn-abrir-pdf" class="btn-abrir-pdf" title="Descargar tu horario en PDF">⬇️ PDF</button>
       </div>
 
       <div id="recordatorios-semana" class="recordatorios-semana"></div>
@@ -365,6 +388,6 @@
     </div>
   </main>
 
-  <script type="module" src="script.js?v=28"></script>
+  <script type="module" src="script.js?v=29"></script>
 </body>
 </html>

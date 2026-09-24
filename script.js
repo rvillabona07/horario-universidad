@@ -822,6 +822,7 @@ onAuthStateChanged(auth, async (user) => {
     usuarioInfo.hidden = false;
     const miApodo = await obtenerApodo(user.uid);
     usuarioEmailEl.textContent = miApodo || "Sin apodo";
+    actualizarAvatarUsuario();
     formAuth.reset();
     limpiarErrorAuth();
     const datos = await cargarDatosDesdeFirestore(user.uid);
@@ -1024,6 +1025,7 @@ formApodo.addEventListener("submit", async (evento) => {
 
   await setDoc(doc(db, "perfiles", usuarioActual.uid), { apodo });
   usuarioEmailEl.textContent = apodo;
+  actualizarAvatarUsuario();
   modalApodo.hidden = true;
 });
 
@@ -2304,6 +2306,7 @@ function iniciarEdicion(id) {
   btnGuardar.textContent = "Guardar cambios";
   btnCancelar.hidden = false;
   document.getElementById("detalle-clase").open = true;
+  abrirHojaFormulario("clase");
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -2366,6 +2369,7 @@ form.addEventListener("submit", (evento) => {
 
   guardarDatos();
   cancelarEdicion();
+  cerrarHojaFormulario();
   render();
 });
 
@@ -2385,6 +2389,7 @@ formPendiente.addEventListener("submit", (evento) => {
 
   guardarDatos();
   formPendiente.reset();
+  cerrarHojaFormulario();
   render();
 });
 
@@ -2505,4 +2510,68 @@ modalPdf.addEventListener("click", (evento) => {
 btnCancelar.addEventListener("click", () => {
   cancelarEdicion();
   document.getElementById("detalle-clase").open = false;
+  cerrarHojaFormulario();
+});
+
+// ---------- Botón ➕ y formularios como hoja (en el celular) ----------
+// En pantallas pequeñas los formularios no se muestran fijos arriba: el
+// botón ➕ pregunta qué agregar y abre el formulario como una hoja desde
+// abajo. En el computador todo sigue igual (las clases del body solo
+// tienen efecto en el CSS del celular).
+
+const modalAgregar = document.getElementById("modal-agregar");
+
+function abrirHojaFormulario(tipo) {
+  document.body.classList.remove("hoja-clase", "hoja-actividad");
+  document.body.classList.add(tipo === "clase" ? "hoja-clase" : "hoja-actividad");
+  document.getElementById(tipo === "clase" ? "detalle-clase" : "detalle-pendiente").open = true;
+  modalAgregar.hidden = true;
+}
+
+function cerrarHojaFormulario() {
+  document.body.classList.remove("hoja-clase", "hoja-actividad");
+}
+
+document.getElementById("btn-flotante-agregar").addEventListener("click", () => {
+  modalAgregar.hidden = false;
+});
+document.getElementById("btn-agregar-clase").addEventListener("click", () => {
+  cancelarEdicion();
+  abrirHojaFormulario("clase");
+});
+document.getElementById("btn-agregar-actividad").addEventListener("click", () => abrirHojaFormulario("actividad"));
+modalAgregar.addEventListener("click", (evento) => {
+  if (evento.target === modalAgregar) modalAgregar.hidden = true;
+});
+
+function cerrarHojaYCancelar() {
+  if (editandoId) cancelarEdicion();
+  cerrarHojaFormulario();
+}
+document.getElementById("btn-cerrar-hoja-formularios").addEventListener("click", cerrarHojaYCancelar);
+document.getElementById("fondo-hoja-formularios").addEventListener("click", cerrarHojaYCancelar);
+
+// ---------- Menú de la cuenta (circulito con tu inicial) ----------
+
+const modalMenu = document.getElementById("modal-menu");
+const btnMenuUsuario = document.getElementById("btn-menu-usuario");
+const menuAvatar = document.getElementById("menu-avatar");
+
+function actualizarAvatarUsuario() {
+  const nombre = usuarioEmailEl.textContent.trim();
+  const inicial = nombre && nombre !== "Sin apodo" ? [...nombre][0].toUpperCase() : "🙂";
+  btnMenuUsuario.textContent = inicial;
+  menuAvatar.textContent = inicial;
+}
+
+btnMenuUsuario.addEventListener("click", () => {
+  modalMenu.hidden = false;
+});
+
+// Al elegir cualquier opción (o tocar afuera) el menú se cierra; la opción
+// abre lo suyo con su propio manejador.
+modalMenu.addEventListener("click", (evento) => {
+  if (evento.target === modalMenu || evento.target.closest(".menu-opcion, .menu-nombre")) {
+    modalMenu.hidden = true;
+  }
 });
