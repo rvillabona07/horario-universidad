@@ -309,7 +309,7 @@ const TEXTOS_NOTIFICACIONES = {
   iphone: {
     titulo: "Instala la app para recibir avisos",
     texto:
-      "En iPhone los avisos solo funcionan con la app en la pantalla de inicio: toca Compartir ⬆️ → «Agregar a inicio», ábrela desde ahí y activa las notificaciones.",
+      "En iPhone los avisos solo funcionan si agregas ParchApp a tu pantalla de inicio y la abres desde ese ícono. Toca «Instalar» en la barra morada de arriba para ver los pasos.",
     activar: false,
   },
   "sin-soporte": {
@@ -393,24 +393,52 @@ function mostrarBannerInstalar() {
   bannerInstalar.hidden = false;
 }
 
+// Ícono de Compartir de iPhone (cuadrado con flecha hacia arriba).
+const ICONO_COMPARTIR = `<svg class="icono-paso" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 10H6.5A1.5 1.5 0 0 0 5 11.5v8A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-8a1.5 1.5 0 0 0-1.5-1.5H16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+
+// Navegadores dentro de otras apps (Instagram, Facebook, etc.): desde ahí
+// el iPhone no deja agregar a inicio, hay que pasar a Safari primero.
+function esNavegadorDentroDeApp() {
+  return /Instagram|FBAN|FBAV|FB_IAB|Line\/|Snapchat|TikTok|musical_ly/i.test(navigator.userAgent);
+}
+
+// Textos fijos escritos por nosotros (no vienen del usuario), por eso
+// se pueden poner con innerHTML para tener negritas e íconos.
+function pasosIphone() {
+  const pasos = [];
+  if (esNavegadorDentroDeApp()) {
+    pasos.push(
+      "Primero ábrela en <b>Safari</b>: toca los <b>tres puntos (•••)</b> de arriba o abajo y elige <b>«Abrir en Safari»</b> (o «Abrir en el navegador»)."
+    );
+  } else {
+    pasos.push(
+      "Asegúrate de estar en <b>Safari</b> 🧭. Si abriste el link desde Instagram, Facebook u otra app, primero ábrelo en Safari."
+    );
+  }
+  pasos.push(
+    `Toca el botón <b>Compartir</b> ${ICONO_COMPARTIR}: el cuadrado con una flecha hacia arriba, en la barra de abajo. Si no lo ves, toca los <b>tres puntos (•••)</b> abajo a la derecha y luego <b>Compartir</b>.`,
+    "En el menú que sale, <b>desliza hacia abajo</b> y toca <b>«Agregar a inicio»</b> (en algunos iPhone dice <b>«Agregar a pantalla de inicio»</b>) ➕.",
+    "Si aparece la opción <b>«Abrir como app web»</b>, déjala <b>activada</b>. Luego toca <b>«Agregar»</b> arriba a la derecha.",
+    "Sal de Safari y busca el ícono de <b>ParchApp</b> en tu pantalla de inicio. <b>Ábrela siempre desde ese ícono</b>: así funcionan las notificaciones."
+  );
+  return pasos;
+}
+
+function pasosAndroid() {
+  return [
+    "Abre este link en <b>Chrome</b>.",
+    "Toca el menú <b>⋮</b> del navegador (arriba a la derecha).",
+    "Toca <b>«Instalar app»</b> o <b>«Agregar a la pantalla principal»</b>.",
+    "Confirma. Listo: ábrela desde el ícono de <b>ParchApp</b> en tu pantalla.",
+  ];
+}
+
 function mostrarPasosInstalar() {
-  const pasos = esIos()
-    ? [
-        "Abre este link en Safari.",
-        "Toca el botón Compartir ⬆️ (abajo en el centro).",
-        "Baja y toca «Agregar a inicio».",
-        "Toca «Agregar». Listo: ábrela desde el ícono de tu pantalla.",
-      ]
-    : [
-        "Abre este link en Chrome.",
-        "Toca el menú ⋮ del navegador (arriba a la derecha).",
-        "Toca «Instalar app» o «Agregar a la pantalla principal».",
-        "Confirma. Listo: ábrela desde el ícono de tu pantalla.",
-      ];
+  const pasos = esIos() ? pasosIphone() : pasosAndroid();
   pasosInstalar.innerHTML = "";
   pasos.forEach((paso) => {
     const li = document.createElement("li");
-    li.textContent = paso;
+    li.innerHTML = paso;
     pasosInstalar.appendChild(li);
   });
   modalInstalar.hidden = false;
@@ -658,8 +686,12 @@ onAuthStateChanged(auth, async (user) => {
     pendientes = datos.pendientes;
     render();
     publicarHorarioCompartido();
+    document.getElementById("auth-invitacion").hidden = true;
+    await procesarInvitacionPendiente();
     revisarNotificacionesAlEntrar();
   } else {
+    miEnlace = "";
+    miEnlaceEl.textContent = "Cargando tu enlace…";
     appMain.hidden = true;
     authPanel.hidden = false;
     usuarioInfo.hidden = true;
@@ -688,32 +720,125 @@ PESTANAS.forEach((pestana) => {
   });
 });
 
-function generarCodigoAleatorio() {
-  const caracteres = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let codigo = "";
-  for (let i = 0; i < 6; i++) {
-    codigo += caracteres[Math.floor(Math.random() * caracteres.length)];
-  }
-  return codigo;
+// ---------- Enlace de invitación ----------
+// Cada usuario tiene un enlace ?amigo=<token>. Quien lo toca queda como su
+// amigo al instante (las reglas de Firestore comprueban que el token sea
+// de verdad de esa persona). El token es largo y aleatorio: no se adivina.
+
+function generarToken() {
+  const caracteres = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(20));
+  return [...bytes].map((b) => caracteres[b % caracteres.length]).join("");
 }
 
-async function asegurarCodigoPropio() {
+async function asegurarEnlacePropio() {
   const referenciaPropia = doc(db, "horarios", usuarioActual.uid);
   const snapshotPropio = await getDoc(referenciaPropia);
-  const existente = snapshotPropio.exists() ? snapshotPropio.data().miCodigo : null;
+  const existente = snapshotPropio.exists() ? snapshotPropio.data().miEnlace : null;
   if (existente) return existente;
 
-  for (let intento = 0; intento < 5; intento++) {
-    const codigo = generarCodigoAleatorio();
-    const referenciaCodigo = doc(db, "codigos", codigo);
-    const snapshotCodigo = await getDoc(referenciaCodigo);
-    if (snapshotCodigo.exists()) continue;
+  const token = generarToken();
+  await setDoc(doc(db, "invitaciones", token), { uid: usuarioActual.uid });
+  await setDoc(referenciaPropia, { miEnlace: token }, { merge: true });
+  return token;
+}
 
-    await setDoc(referenciaCodigo, { uid: usuarioActual.uid });
-    await setDoc(referenciaPropia, { miCodigo: codigo }, { merge: true });
-    return codigo;
+function enlaceDeInvitacion(token) {
+  const url = new URL("./", location.href);
+  url.searchParams.set("amigo", token);
+  return url.toString();
+}
+
+// Si la app se abrió con ?amigo=..., se guarda la invitación (por si hay
+// que iniciar sesión primero) y se limpia la dirección.
+const CLAVE_INVITACION = "horarioInvitacionPendiente";
+let invitacionPendiente = null;
+
+(function leerInvitacionDeLaUrl() {
+  const parametros = new URLSearchParams(location.search);
+  const token = parametros.get("amigo");
+  if (!token) return;
+  invitacionPendiente = token;
+  try {
+    localStorage.setItem(CLAVE_INVITACION, token);
+  } catch {}
+  parametros.delete("amigo");
+  const resto = parametros.toString();
+  history.replaceState(null, "", location.pathname + (resto ? `?${resto}` : "") + location.hash);
+})();
+
+function tokenDeInvitacionPendiente() {
+  if (invitacionPendiente) return invitacionPendiente;
+  try {
+    return localStorage.getItem(CLAVE_INVITACION);
+  } catch {
+    return null;
   }
-  throw new Error("No se pudo generar un código único.");
+}
+
+function olvidarInvitacion() {
+  invitacionPendiente = null;
+  try {
+    localStorage.removeItem(CLAVE_INVITACION);
+  } catch {}
+}
+
+document.getElementById("auth-invitacion").hidden = !tokenDeInvitacionPendiente();
+
+// Después de iniciar sesión: si llegó por un enlace, los vuelve amigos.
+async function procesarInvitacionPendiente() {
+  const token = tokenDeInvitacionPendiente();
+  if (!token) return;
+
+  try {
+    const invitacion = await getDoc(doc(db, "invitaciones", token));
+    if (!invitacion.exists()) {
+      olvidarInvitacion();
+      alert("Ese enlace de invitación no es válido.");
+      return;
+    }
+
+    const miUid = usuarioActual.uid;
+    const uidAmigo = invitacion.data().uid;
+    if (uidAmigo === miUid) {
+      olvidarInvitacion();
+      return; // abrió su propio enlace
+    }
+
+    const [deMi, deEl] = await Promise.all([
+      getDocs(query(collection(db, "solicitudesAmistad"), where("de", "==", miUid), where("para", "==", uidAmigo))),
+      getDocs(query(collection(db, "solicitudesAmistad"), where("de", "==", uidAmigo), where("para", "==", miUid))),
+    ]);
+    const todas = [...deMi.docs, ...deEl.docs];
+    const apodo = (await obtenerApodo(uidAmigo)) || "tu amigo";
+
+    if (todas.some((d) => d.data().estado === "aceptada")) {
+      olvidarInvitacion();
+      alert(`Ya eres amigo de ${apodo} 🙌`);
+      return;
+    }
+
+    const solicitudDeEl = deEl.docs.find((d) => d.data().estado === "pendiente");
+    if (solicitudDeEl) {
+      await updateDoc(solicitudDeEl.ref, { estado: "aceptada" });
+    } else {
+      await addDoc(collection(db, "solicitudesAmistad"), {
+        de: miUid,
+        para: uidAmigo,
+        estado: "aceptada",
+        invitacion: token,
+        creada: Date.now(),
+      });
+    }
+
+    olvidarInvitacion();
+    alert(`🎉 ¡Listo! Ahora tú y ${apodo} son amigos en ParchApp.`);
+    if (!document.getElementById("vista-amigos").hidden) renderAmigos();
+  } catch (error) {
+    console.error(error);
+    alert("No se pudo aceptar la invitación. Vuelve a tocar el enlace para intentarlo otra vez.");
+    olvidarInvitacion();
+  }
 }
 
 async function obtenerApodo(uid) {
@@ -753,59 +878,42 @@ formApodo.addEventListener("submit", async (evento) => {
   modalApodo.hidden = true;
 });
 
-const miCodigoEl = document.getElementById("mi-codigo");
-const btnCopiarCodigo = document.getElementById("btn-copiar-codigo");
-const formAgregarAmigo = document.getElementById("form-agregar-amigo");
-const codigoAmigoInput = document.getElementById("codigo-amigo-input");
-const amigoError = document.getElementById("amigo-error");
+const miEnlaceEl = document.getElementById("mi-enlace");
+const btnCompartirEnlace = document.getElementById("btn-compartir-enlace");
+const btnCopiarEnlace = document.getElementById("btn-copiar-enlace");
+const seccionSolicitudes = document.getElementById("seccion-solicitudes");
 const listaSolicitudes = document.getElementById("lista-solicitudes");
 const listaAmigos = document.getElementById("lista-amigos");
+let miEnlace = "";
 
-btnCopiarCodigo.addEventListener("click", async () => {
+async function copiarEnlace() {
   try {
-    await navigator.clipboard.writeText(miCodigoEl.textContent);
-    btnCopiarCodigo.textContent = "¡Copiado!";
-    setTimeout(() => (btnCopiarCodigo.textContent = "Copiar"), 1500);
+    await navigator.clipboard.writeText(miEnlace);
+    btnCopiarEnlace.textContent = "¡Copiado!";
+    setTimeout(() => (btnCopiarEnlace.textContent = "Copiar"), 1500);
   } catch {
-    alert("No se pudo copiar. Selecciona el código manualmente.");
+    alert("No se pudo copiar. Mantén presionado el enlace para copiarlo.");
   }
+}
+
+btnCopiarEnlace.addEventListener("click", () => {
+  if (miEnlace) copiarEnlace();
 });
 
-formAgregarAmigo.addEventListener("submit", async (evento) => {
-  evento.preventDefault();
-  amigoError.hidden = true;
-
-  const codigo = codigoAmigoInput.value.trim().toUpperCase();
-  if (!codigo) return;
-
+btnCompartirEnlace.addEventListener("click", async () => {
+  if (!miEnlace) return;
+  if (!navigator.share) {
+    copiarEnlace();
+    return;
+  }
   try {
-    const snapshotCodigo = await getDoc(doc(db, "codigos", codigo));
-    if (!snapshotCodigo.exists()) {
-      amigoError.textContent = "Ese código no existe.";
-      amigoError.hidden = false;
-      return;
-    }
-
-    const uidDestino = snapshotCodigo.data().uid;
-    if (uidDestino === usuarioActual.uid) {
-      amigoError.textContent = "Ese es tu propio código.";
-      amigoError.hidden = false;
-      return;
-    }
-
-    await addDoc(collection(db, "solicitudesAmistad"), {
-      de: usuarioActual.uid,
-      para: uidDestino,
-      estado: "pendiente",
-      creada: Date.now(),
+    await navigator.share({
+      title: "ParchApp",
+      text: "¡Agrégame en ParchApp! 📅 Toca el enlace y quedamos como amigos al instante:",
+      url: miEnlace,
     });
-
-    codigoAmigoInput.value = "";
-    alert("¡Solicitud enviada!");
-  } catch (error) {
-    console.error(error);
-    amigoError.textContent = "Ocurrió un error, intenta de nuevo.";
-    amigoError.hidden = false;
+  } catch {
+    // Canceló el menú de compartir: no pasa nada.
   }
 });
 
@@ -830,14 +938,12 @@ function badgeEstado(estado) {
 }
 
 function amigosDesdeSolicitudes(snapshotDestino, snapshotOrigen) {
-  return [
-    ...snapshotDestino.docs
-      .filter((d) => d.data().estado === "aceptada")
-      .map((d) => ({ uid: d.data().de })),
-    ...snapshotOrigen.docs
-      .filter((d) => d.data().estado === "aceptada")
-      .map((d) => ({ uid: d.data().para })),
-  ];
+  const uids = new Set([
+    ...snapshotDestino.docs.filter((d) => d.data().estado === "aceptada").map((d) => d.data().de),
+    ...snapshotOrigen.docs.filter((d) => d.data().estado === "aceptada").map((d) => d.data().para),
+  ]);
+  // Set: si por algún motivo hay dos solicitudes aceptadas, sale una vez.
+  return [...uids].map((uid) => ({ uid }));
 }
 
 async function obtenerAmigos() {
@@ -855,9 +961,15 @@ async function obtenerAmigos() {
 }
 
 async function renderAmigos() {
-  miCodigoEl.textContent = "......";
-  const codigo = await asegurarCodigoPropio();
-  miCodigoEl.textContent = codigo;
+  if (!miEnlace) {
+    try {
+      miEnlace = enlaceDeInvitacion(await asegurarEnlacePropio());
+      miEnlaceEl.textContent = miEnlace;
+    } catch (error) {
+      console.error(error);
+      miEnlaceEl.textContent = "No se pudo crear tu enlace. Recarga la app.";
+    }
+  }
 
   const consultaComoDestino = query(
     collection(db, "solicitudesAmistad"),
@@ -878,12 +990,10 @@ async function renderAmigos() {
     (d) => d.data().estado === "pendiente"
   );
 
-  if (pendientesRecibidas.length === 0) {
-    const vacio = document.createElement("li");
-    vacio.className = "mensaje-vacio";
-    vacio.textContent = "No tienes solicitudes pendientes.";
-    listaSolicitudes.appendChild(vacio);
-  } else {
+  // Solo quedan solicitudes del sistema anterior de códigos; si no hay, no
+  // se muestra la sección.
+  seccionSolicitudes.hidden = pendientesRecibidas.length === 0;
+  if (pendientesRecibidas.length > 0) {
     for (const docSnap of pendientesRecibidas) {
       const solicitud = docSnap.data();
       const apodo = await obtenerApodo(solicitud.de);

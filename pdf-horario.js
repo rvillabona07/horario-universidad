@@ -630,6 +630,17 @@ export function dibujarHorario(canvas, clases, idEstilo) {
     });
   }
 
+  // Firma discreta abajo a la derecha
+  ctx.save();
+  ctx.globalAlpha = 0.65;
+  ctx.fillStyle = estilo.colorSubtitulo;
+  ctx.font = `${estilo.pesoTexto} 20px '${estilo.fuenteTexto}', sans-serif`;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillText("Hecho con ParchApp", area.x + area.w, area.y + area.h + 24);
+  ctx.restore();
+  ctx.textAlign = "center";
+
   // Bloques de clases
   const materias = [...new Set(clases.map((c) => c.materia))];
   clases.forEach((clase) => {
@@ -670,5 +681,5 @@ export async function descargarPdf(canvas, idEstilo) {
   const { jsPDF } = await cargarJsPdf();
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 297, 210);
-  pdf.save(`mi-horario-${buscarEstilo(idEstilo).id}.pdf`);
+  pdf.save(`horario-parchapp-${buscarEstilo(idEstilo).id}.pdf`);
 }
