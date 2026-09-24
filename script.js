@@ -406,30 +406,26 @@ function esNavegadorDentroDeApp() {
 // se pueden poner con innerHTML para tener negritas e íconos.
 function pasosIphone() {
   const pasos = [];
-  if (esNavegadorDentroDeApp()) {
-    pasos.push(
-      "Primero ábrela en <b>Safari</b>: toca los <b>tres puntos (•••)</b> de arriba o abajo y elige <b>«Abrir en Safari»</b> (o «Abrir en el navegador»)."
-    );
-  } else {
-    pasos.push(
-      "Asegúrate de estar en <b>Safari</b> 🧭. Si abriste el link desde Instagram, Facebook u otra app, primero ábrelo en Safari."
-    );
-  }
   pasos.push(
-    `Toca el botón <b>Compartir</b> ${ICONO_COMPARTIR}: el cuadrado con una flecha hacia arriba, en la barra de abajo. Si no lo ves, toca los <b>tres puntos (•••)</b> abajo a la derecha y luego <b>Compartir</b>.`,
-    "En el menú que sale, <b>desliza hacia abajo</b> y toca <b>«Agregar a inicio»</b> (en algunos iPhone dice <b>«Agregar a pantalla de inicio»</b>) ➕.",
-    "Si aparece la opción <b>«Abrir como app web»</b>, déjala <b>activada</b>. Luego toca <b>«Agregar»</b> arriba a la derecha.",
-    "Sal de Safari y busca el ícono de <b>ParchApp</b> en tu pantalla de inicio. <b>Ábrela siempre desde ese ícono</b>: así funcionan las notificaciones."
+    esNavegadorDentroDeApp()
+      ? "Toca <b>•••</b> y elige <b>«Abrir en Safari»</b>."
+      : "Ábrela en <b>Safari</b> 🧭."
+  );
+  pasos.push(
+    `Toca <b>Compartir</b> ${ICONO_COMPARTIR} (si no lo ves, toca <b>•••</b> primero).`,
+    "Baja y toca <b>«Agregar a inicio»</b>.",
+    "Toca <b>«Agregar»</b>.",
+    "Abre <b>ParchApp</b> desde el ícono de tu pantalla."
   );
   return pasos;
 }
 
 function pasosAndroid() {
   return [
-    "Abre este link en <b>Chrome</b>.",
-    "Toca el menú <b>⋮</b> del navegador (arriba a la derecha).",
-    "Toca <b>«Instalar app»</b> o <b>«Agregar a la pantalla principal»</b>.",
-    "Confirma. Listo: ábrela desde el ícono de <b>ParchApp</b> en tu pantalla.",
+    "Ábrela en <b>Chrome</b>.",
+    "Toca el menú <b>⋮</b> (arriba a la derecha).",
+    "Toca <b>«Instalar app»</b> y confirma.",
+    "Abre <b>ParchApp</b> desde el ícono de tu pantalla.",
   ];
 }
 
