@@ -820,8 +820,9 @@ onAuthStateChanged(auth, async (user) => {
     authPanel.hidden = true;
     appMain.hidden = false;
     usuarioInfo.hidden = false;
-    const miApodo = await obtenerApodo(user.uid);
-    usuarioEmailEl.textContent = miApodo || "Sin apodo";
+    const miPerfil = await obtenerPerfil(user.uid);
+    usuarioEmailEl.textContent = miPerfil.apodo || "Sin apodo";
+    miAvatar = miPerfil.avatar || null;
     actualizarAvatarUsuario();
     formAuth.reset();
     limpiarErrorAuth();
@@ -991,6 +992,16 @@ async function procesarInvitacionPendiente() {
   }
 }
 
+// perfiles/{uid}: { apodo, avatar }
+async function obtenerPerfil(uid) {
+  try {
+    const snapshot = await getDoc(doc(db, "perfiles", uid));
+    return snapshot.exists() ? snapshot.data() : {};
+  } catch {
+    return {};
+  }
+}
+
 async function obtenerApodo(uid) {
   try {
     const snapshot = await getDoc(doc(db, "perfiles", uid));
@@ -1023,7 +1034,8 @@ formApodo.addEventListener("submit", async (evento) => {
   const apodo = apodoInput.value.trim();
   if (!apodo) return;
 
-  await setDoc(doc(db, "perfiles", usuarioActual.uid), { apodo });
+  // merge: para no borrar el avatar al cambiar el apodo.
+  await setDoc(doc(db, "perfiles", usuarioActual.uid), { apodo }, { merge: true });
   usuarioEmailEl.textContent = apodo;
   actualizarAvatarUsuario();
   modalApodo.hidden = true;
@@ -1183,14 +1195,14 @@ async function renderAmigos() {
   const misPermitidos = await obtenerMisPermitidos();
 
   for (const amigo of amigosAceptados) {
-    const [estado, apodo, clasesAmigo] = await Promise.all([
+    const [estado, perfil, clasesAmigo] = await Promise.all([
       obtenerEstadoAmigo(amigo.uid),
-      obtenerApodo(amigo.uid),
+      obtenerPerfil(amigo.uid),
       obtenerHorarioDeAmigo(amigo.uid),
     ]);
-    const nombre = apodo || "Amigo sin apodo";
+    const nombre = perfil.apodo || "Amigo sin apodo";
     listaAmigos.appendChild(
-      tarjetaAmigo(amigo.uid, nombre, estado, clasesAmigo, misPermitidos.includes(amigo.uid))
+      tarjetaAmigo(amigo.uid, nombre, estado, clasesAmigo, misPermitidos.includes(amigo.uid), perfil.avatar)
     );
   }
 }
@@ -1199,7 +1211,7 @@ const COLORES_AVATAR = ["#8b5cf6", "#ec4899", "#3b82f6", "#10b981", "#f97316", "
 
 // Tarjeta de un amigo: arriba quién es y cómo está (+ Ver horario);
 // abajo, separado, si puede ver tu horario.
-function tarjetaAmigo(uid, nombre, estado, clasesAmigo, puedeVerMiHorario) {
+function tarjetaAmigo(uid, nombre, estado, clasesAmigo, puedeVerMiHorario, avatarId) {
   const li = document.createElement("li");
   li.className = "tarjeta-amigo";
 
@@ -1211,6 +1223,7 @@ function tarjetaAmigo(uid, nombre, estado, clasesAmigo, puedeVerMiHorario) {
   const sumaLetras = [...uid].reduce((total, letra) => total + letra.charCodeAt(0), 0);
   avatar.style.background = COLORES_AVATAR[sumaLetras % COLORES_AVATAR.length];
   avatar.textContent = [...nombre.trim()][0]?.toUpperCase() || "?";
+  if (avatarId) pintarAvatarEn(avatar, avatarId, nombre);
 
   const datos = document.createElement("span");
   datos.className = "amigo-datos";
@@ -2557,12 +2570,90 @@ const modalMenu = document.getElementById("modal-menu");
 const btnMenuUsuario = document.getElementById("btn-menu-usuario");
 const menuAvatar = document.getElementById("menu-avatar");
 
+// ---------- Avatares ----------
+// Los dibujos están en avatares.js (se carga solo cuando se necesita, con
+// la misma versión que script.js). Sin avatar se muestra la inicial.
+
+let miAvatar = null;
+let moduloAvatares = null;
+
+function cargarAvatares() {
+  moduloAvatares ||= import(`./avatares.js?v=${VERSION_ACTUAL}`);
+  return moduloAvatares;
+}
+
+async function pintarAvatarEn(elemento, avatarId, nombre) {
+  const inicial = nombre && nombre !== "Sin apodo" ? [...nombre.trim()][0].toUpperCase() : "🙂";
+  if (avatarId) {
+    try {
+      const svg = (await cargarAvatares()).svgAvatar(avatarId);
+      if (svg) {
+        elemento.innerHTML = svg;
+        elemento.classList.add("con-avatar");
+        return;
+      }
+    } catch (error) {
+      console.error("No se pudieron cargar los avatares:", error);
+    }
+  }
+  elemento.textContent = inicial;
+  elemento.classList.remove("con-avatar");
+}
+
 function actualizarAvatarUsuario() {
   const nombre = usuarioEmailEl.textContent.trim();
-  const inicial = nombre && nombre !== "Sin apodo" ? [...nombre][0].toUpperCase() : "🙂";
-  btnMenuUsuario.textContent = inicial;
-  menuAvatar.textContent = inicial;
+  pintarAvatarEn(btnMenuUsuario, miAvatar, nombre);
+  pintarAvatarEn(menuAvatar, miAvatar, nombre);
 }
+
+const modalAvatar = document.getElementById("modal-avatar");
+const grillaAvatares = document.getElementById("grilla-avatares");
+
+async function guardarAvatar(avatarId) {
+  const anterior = miAvatar;
+  miAvatar = avatarId;
+  actualizarAvatarUsuario();
+  modalAvatar.hidden = true;
+  try {
+    await setDoc(doc(db, "perfiles", usuarioActual.uid), { avatar: avatarId }, { merge: true });
+  } catch (error) {
+    console.error(error);
+    miAvatar = anterior;
+    actualizarAvatarUsuario();
+    alert("No se pudo guardar tu avatar. Intenta de nuevo.");
+  }
+}
+
+async function abrirSelectorAvatar() {
+  modalMenu.hidden = true;
+  modalAvatar.hidden = false;
+  grillaAvatares.innerHTML = "";
+  try {
+    const { IDS_AVATARES, svgAvatar } = await cargarAvatares();
+    IDS_AVATARES.forEach((id) => {
+      const opcion = document.createElement("button");
+      opcion.type = "button";
+      opcion.className = "opcion-avatar";
+      if (id === miAvatar) opcion.classList.add("opcion-avatar-activa");
+      opcion.innerHTML = svgAvatar(id);
+      opcion.addEventListener("click", () => guardarAvatar(id));
+      grillaAvatares.appendChild(opcion);
+    });
+  } catch (error) {
+    console.error(error);
+    grillaAvatares.textContent = "No se pudieron cargar los avatares. Revisa tu conexión.";
+  }
+}
+
+document.getElementById("btn-elegir-avatar").addEventListener("click", abrirSelectorAvatar);
+menuAvatar.addEventListener("click", abrirSelectorAvatar);
+document.getElementById("btn-sin-avatar").addEventListener("click", () => guardarAvatar(null));
+document.getElementById("btn-cerrar-avatar").addEventListener("click", () => {
+  modalAvatar.hidden = true;
+});
+modalAvatar.addEventListener("click", (evento) => {
+  if (evento.target === modalAvatar) modalAvatar.hidden = true;
+});
 
 btnMenuUsuario.addEventListener("click", () => {
   modalMenu.hidden = false;

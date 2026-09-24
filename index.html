@@ -12,7 +12,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="ParchApp" />
   <!-- Al publicar cambios, sube este número (aquí y en script.js abajo) -->
-  <link rel="stylesheet" href="style.css?v=29" />
+  <link rel="stylesheet" href="style.css?v=30" />
 </head>
 <body>
   <header>
@@ -32,15 +32,26 @@
   <div id="modal-menu" class="modal-overlay modal-hoja" hidden>
     <div class="modal-colores hoja-menu">
       <div class="menu-perfil">
-        <span id="menu-avatar" class="menu-avatar">?</span>
+        <button type="button" id="menu-avatar" class="menu-avatar" title="Elegir avatar">?</button>
         <div>
           <button id="usuario-email" type="button" class="menu-nombre" title="Cambiar tu apodo"></button>
           <small>Toca tu nombre para cambiar tu apodo</small>
         </div>
       </div>
+      <button id="btn-elegir-avatar" type="button" class="menu-opcion">🙂 <span>Elegir avatar</span></button>
       <button id="btn-colores" type="button" class="menu-opcion">🎨 <span>Colores de la app</span></button>
       <button id="btn-notificaciones" type="button" class="menu-opcion">🔔 <span>Notificaciones</span></button>
       <button id="btn-logout" type="button" class="menu-opcion menu-opcion-salir">🚪 <span>Cerrar sesión</span></button>
+    </div>
+  </div>
+
+  <div id="modal-avatar" class="modal-overlay modal-hoja" hidden>
+    <div class="modal-colores hoja-menu hoja-avatar">
+      <button type="button" id="btn-cerrar-avatar" class="btn-cerrar-modal" title="Cerrar">×</button>
+      <h2>Elige tu avatar</h2>
+      <p class="modal-colores-subtexto">Así te verán tus amigos en ParchApp</p>
+      <div id="grilla-avatares" class="grilla-avatares"></div>
+      <button type="button" id="btn-sin-avatar" class="btn-sin-avatar">Usar mi inicial</button>
     </div>
   </div>
 
@@ -388,6 +399,6 @@
     </div>
   </main>
 
-  <script type="module" src="script.js?v=29"></script>
+  <script type="module" src="script.js?v=30"></script>
 </body>
 </html>

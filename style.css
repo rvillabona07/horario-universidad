@@ -1863,6 +1863,78 @@ button {
   color: var(--color-peligro);
 }
 
+/* ---------- Avatares ---------- */
+
+.menu-avatar {
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  position: relative;
+}
+
+.con-avatar {
+  background: none !important;
+  padding: 0;
+  overflow: hidden;
+}
+
+.con-avatar svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 50%;
+}
+
+.btn-menu-usuario.con-avatar {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.6);
+}
+
+.hoja-avatar {
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.grilla-avatares {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.6rem;
+  margin: 0.2rem 0 0.4rem;
+}
+
+.opcion-avatar {
+  padding: 0;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  background: none;
+  transition: transform 0.12s ease;
+}
+
+.opcion-avatar svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 50%;
+}
+
+.opcion-avatar:active {
+  transform: scale(0.94);
+}
+
+.opcion-avatar-activa {
+  border-color: var(--color-primario);
+  box-shadow: 0 0 0 3px var(--color-borde);
+}
+
+.btn-sin-avatar {
+  align-self: center;
+  background: none;
+  padding: 0.3rem;
+  font-size: 0.82rem;
+  color: #6b7280;
+  text-decoration: underline;
+}
+
 /* ---------- Semana + PDF en una línea ---------- */
 
 .btn-abrir-pdf {
