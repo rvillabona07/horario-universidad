@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" />
-  <link rel="stylesheet" href="style.css?v=50" />
+  <link rel="stylesheet" href="style.css?v=51" />
 </head>
 <body>
   <header>
@@ -226,6 +226,10 @@
         <label>
           Contraseña
           <input type="password" id="auth-password" required minlength="6" />
+        </label>
+        <label id="auth-confirmar-caja" hidden>
+          Repite la contraseña
+          <input type="password" id="auth-confirmar" minlength="6" />
         </label>
         <button type="button" id="btn-olvide-contrasena" class="btn-olvide-contrasena">¿Olvidaste tu contraseña?</button>
         <p id="auth-error" class="auth-error" hidden></p>
@@ -469,6 +473,6 @@
     </div>
   </main>
 
-  <script type="module" src="script.js?v=50"></script>
+  <script type="module" src="script.js?v=51"></script>
 </body>
 </html>

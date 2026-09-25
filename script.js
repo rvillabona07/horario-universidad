@@ -657,6 +657,8 @@ const authSubtexto = document.getElementById("auth-subtexto");
 const formAuth = document.getElementById("form-auth");
 const authEmail = document.getElementById("auth-email");
 const authPassword = document.getElementById("auth-password");
+const authConfirmarCaja = document.getElementById("auth-confirmar-caja");
+const authConfirmar = document.getElementById("auth-confirmar");
 const authError = document.getElementById("auth-error");
 const btnAuthPrincipal = document.getElementById("btn-auth-principal");
 const authToggleTexto = document.getElementById("auth-toggle-texto");
@@ -778,6 +780,8 @@ function actualizarModoAuth() {
   if (modoAuth === "login") {
     authCard.classList.remove("auth-card-registro");
     btnOlvideContrasena.hidden = false;
+    authConfirmarCaja.hidden = true;
+    authConfirmar.required = false;
     authTitulo.textContent = "Inicia sesión";
     authSubtexto.textContent = "Para guardar tu horario y verlo en todos tus dispositivos";
     btnAuthPrincipal.textContent = "Iniciar sesión";
@@ -786,6 +790,11 @@ function actualizarModoAuth() {
   } else {
     authCard.classList.add("auth-card-registro");
     btnOlvideContrasena.hidden = true;
+    // Al crear la cuenta la contraseña se escribe dos veces, para no
+    // quedar con una mal escrita sin saberlo.
+    authConfirmarCaja.hidden = false;
+    authConfirmar.required = true;
+    authConfirmar.value = "";
     authTitulo.textContent = "Crea tu cuenta";
     authSubtexto.textContent = "Regístrate para guardar tu horario y verlo en todos tus dispositivos";
     btnAuthPrincipal.textContent = "Crear cuenta";
@@ -806,6 +815,12 @@ formAuth.addEventListener("submit", async (evento) => {
     if (modoAuth === "login") {
       await signInWithEmailAndPassword(auth, authEmail.value.trim(), authPassword.value);
     } else {
+      if (authPassword.value !== authConfirmar.value) {
+        mostrarErrorAuth("Las contraseñas no coinciden. Escríbelas otra vez.");
+        authConfirmar.value = "";
+        authConfirmar.focus();
+        return;
+      }
       await createUserWithEmailAndPassword(auth, authEmail.value.trim(), authPassword.value);
     }
   } catch (error) {
@@ -825,6 +840,7 @@ onAuthStateChanged(auth, async (user) => {
     const miPerfil = await obtenerPerfil(user.uid);
     usuarioEmailEl.textContent = miPerfil.apodo || "Sin apodo";
     apodoCambiado = miPerfil.apodoCambiado?.toMillis?.() || 0;
+    miApodoClave = miPerfil.apodoClave || null;
     miAvatar = miPerfil.avatar || null;
     actualizarAvatarUsuario();
     formAuth.reset();
@@ -1035,7 +1051,8 @@ async function procesarInvitacionPendiente() {
   }
 }
 
-// perfiles/{uid}: { apodo, apodoCambiado, avatar }
+// perfiles/{uid}: { apodo, apodoClave, apodoCambiado, avatar }
+// apodos/{clave}: { uid }: quién tiene cada apodo (no se repiten).
 async function obtenerPerfil(uid) {
   try {
     const snapshot = await getDoc(doc(db, "perfiles", uid));
@@ -1065,6 +1082,18 @@ const btnCerrarApodo = document.getElementById("btn-cerrar-apodo");
 // de Firestore también lo exigen.
 const DIAS_APODO_FIJO = 30;
 let apodoCambiado = 0; // cuándo se cambió por última vez (ms), 0 = nunca
+let miApodoClave = null; // mi apodo reservado en apodos/
+
+// Dos apodos son el mismo sin importar mayúsculas ni espacios de más
+// ("Robert" = "robert"). Las reglas de Firestore calculan la misma clave.
+function claveApodo(apodo) {
+  return apodo.trim().toLowerCase().replace(/ +/g, " ");
+}
+
+function apodoValido(apodo) {
+  const clave = claveApodo(apodo);
+  return clave && !apodo.includes("/") && !/^\.*$/.test(clave) && !/^__.*__$/.test(clave);
+}
 
 function fechaApodoLibre(desde) {
   return new Date(desde + DIAS_APODO_FIJO * 24 * 60 * 60 * 1000);
@@ -1093,12 +1122,36 @@ modalApodo.addEventListener("click", (evento) => {
 
 formApodo.addEventListener("submit", async (evento) => {
   evento.preventDefault();
-  const apodo = apodoInput.value.trim();
+  const apodo = apodoInput.value.trim().replace(/ +/g, " ");
   if (!apodo) return;
   if (apodo === usuarioEmailEl.textContent) {
     modalApodo.hidden = true;
     return;
   }
+  if (!apodoValido(apodo)) {
+    alert("Ese apodo no es válido. No uses «/».");
+    return;
+  }
+
+  const miUid = usuarioActual.uid;
+  const clave = claveApodo(apodo);
+  const referenciaApodo = doc(db, "apodos", clave);
+  let yaEsMio = clave === miApodoClave;
+  if (!yaEsMio) {
+    try {
+      const ocupado = await getDoc(referenciaApodo);
+      if (ocupado.exists() && ocupado.data().uid !== miUid) {
+        alert(`El apodo "${apodo}" ya lo tiene otra persona. Elige otro.`);
+        return;
+      }
+      yaEsMio = ocupado.exists();
+    } catch (error) {
+      console.error(error);
+      alert("No se pudo revisar el apodo. Revisa tu internet e intenta de nuevo.");
+      return;
+    }
+  }
+
   if (
     !confirm(
       `Tu apodo será "${apodo}" y no lo podrás cambiar durante un mes (hasta el ${textoFecha(fechaApodoLibre(Date.now()))}).\n\n¿Guardarlo?`
@@ -1107,18 +1160,24 @@ formApodo.addEventListener("submit", async (evento) => {
     return;
   }
 
+  // Perfil, apodo nuevo reservado y el viejo liberado: todo junto o nada.
+  const lote = writeBatch(db);
+  // merge: para no borrar el avatar al cambiar el apodo.
+  lote.set(doc(db, "perfiles", miUid), { apodo, apodoClave: clave, apodoCambiado: serverTimestamp() }, { merge: true });
+  if (!yaEsMio) lote.set(referenciaApodo, { uid: miUid });
+  if (miApodoClave && miApodoClave !== clave) lote.delete(doc(db, "apodos", miApodoClave));
   try {
-    // merge: para no borrar el avatar al cambiar el apodo.
-    await setDoc(doc(db, "perfiles", usuarioActual.uid), { apodo, apodoCambiado: serverTimestamp() }, { merge: true });
+    await lote.commit();
   } catch (error) {
     console.error(error);
     alert(
       error.code === "permission-denied"
-        ? "Tu apodo no se puede cambiar todavía: cambió hace menos de un mes."
+        ? "No se pudo guardar: puede que otra persona acabe de tomar ese apodo o que tu apodo haya cambiado hace menos de un mes."
         : "No se pudo guardar tu apodo. Revisa tu internet e intenta de nuevo."
     );
     return;
   }
+  miApodoClave = clave;
   apodoCambiado = Date.now();
   usuarioEmailEl.textContent = apodo;
   actualizarAvatarUsuario();
@@ -3525,12 +3584,13 @@ async function abrirSelectorAvatar() {
   modalAvatar.hidden = false;
   grillaAvatares.innerHTML = "";
   try {
-    const { IDS_AVATARES, svgAvatar } = await cargarAvatares();
+    const { IDS_AVATARES, svgAvatar, idAvatar } = await cargarAvatares();
+    const actual = idAvatar(miAvatar); // los avatares de antes pasan al nuevo más parecido
     IDS_AVATARES.forEach((id) => {
       const opcion = document.createElement("button");
       opcion.type = "button";
       opcion.className = "opcion-avatar";
-      if (id === miAvatar) opcion.classList.add("opcion-avatar-activa");
+      if (id === actual) opcion.classList.add("opcion-avatar-activa");
       opcion.innerHTML = svgAvatar(id);
       opcion.addEventListener("click", () => guardarAvatar(id));
       grillaAvatares.appendChild(opcion);
