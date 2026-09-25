@@ -1206,12 +1206,30 @@ function amigosDesdeSolicitudes(snapshotDestino, snapshotOrigen) {
   return [...uids].map((uid) => ({ uid }));
 }
 
+// Uids de los amigos aceptados. Cuentas, fotos y chats de alguien que no
+// esté aquí no se muestran: un desconocido no puede mandarte nada aunque se
+// salte la app. Se guarda un minuto para no consultar a cada rato.
+let cacheAmigos = { uid: null, hasta: 0, uids: new Set() };
+
+async function uidsDeAmigos() {
+  const miUid = usuarioActual.uid;
+  if (cacheAmigos.uid === miUid && Date.now() < cacheAmigos.hasta) return cacheAmigos.uids;
+  const [snapshotDestino, snapshotOrigen] = await Promise.all([
+    getDocs(query(collection(db, "solicitudesAmistad"), where("para", "==", miUid))),
+    getDocs(query(collection(db, "solicitudesAmistad"), where("de", "==", miUid))),
+  ]);
+  const uids = new Set(amigosDesdeSolicitudes(snapshotDestino, snapshotOrigen).map((a) => a.uid));
+  cacheAmigos = { uid: miUid, hasta: Date.now() + 60 * 1000, uids };
+  return uids;
+}
+
 async function obtenerAmigos() {
   const [snapshotDestino, snapshotOrigen] = await Promise.all([
     getDocs(query(collection(db, "solicitudesAmistad"), where("para", "==", usuarioActual.uid))),
     getDocs(query(collection(db, "solicitudesAmistad"), where("de", "==", usuarioActual.uid))),
   ]);
   const amigos = amigosDesdeSolicitudes(snapshotDestino, snapshotOrigen);
+  cacheAmigos = { uid: usuarioActual.uid, hasta: Date.now() + 60 * 1000, uids: new Set(amigos.map((a) => a.uid)) };
   await Promise.all(
     amigos.map(async (amigo) => {
       amigo.apodo = (await obtenerApodo(amigo.uid)) || "Amigo sin apodo";
@@ -1903,7 +1921,10 @@ async function renderCuentas() {
     return apodos[uid];
   };
 
-  const pares = Object.entries(calcularPares(snapshotCreadas.docs, snapshotDebo.docs)).sort(
+  // Solo cuentas creadas por amigos aceptados (o por mí).
+  const amigosUids = new Set(amigos.map((a) => a.uid));
+  const deboDeAmigos = snapshotDebo.docs.filter((d) => amigosUids.has(d.data().creador));
+  const pares = Object.entries(calcularPares(snapshotCreadas.docs, deboDeAmigos)).sort(
     ([, a], [, b]) => Math.abs(b.neto) - Math.abs(a.neto)
   );
 
@@ -2146,11 +2167,12 @@ async function cargarFotos() {
   const miUid = usuarioActual.uid;
   let documentos = [];
   try {
-    const [mias, deAmigos] = await Promise.all([
+    const [mias, paraMi, amigos] = await Promise.all([
       getDocs(query(collection(db, "fotos"), where("autor", "==", miUid))),
       getDocs(query(collection(db, "fotos"), where("visibles", "array-contains", miUid))),
+      uidsDeAmigos(),
     ]);
-    documentos = [...mias.docs, ...deAmigos.docs];
+    documentos = [...mias.docs, ...paraMi.docs.filter((d) => amigos.has(d.data().autor))];
   } catch (error) {
     console.error("No se pudieron cargar las fotos:", error);
   }
@@ -2301,10 +2323,14 @@ function idChat(idFoto, uidAmigo) {
 
 async function obtenerMisChats() {
   try {
-    const snapshot = await getDocs(
-      query(collection(db, "chats"), where("participantes", "array-contains", usuarioActual.uid))
-    );
-    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const miUid = usuarioActual.uid;
+    const [snapshot, amigos] = await Promise.all([
+      getDocs(query(collection(db, "chats"), where("participantes", "array-contains", miUid))),
+      uidsDeAmigos(),
+    ]);
+    return snapshot.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((chat) => (chat.participantes || []).every((uid) => uid === miUid || amigos.has(uid)));
   } catch (error) {
     console.error("No se pudieron cargar los chats:", error);
     return [];
