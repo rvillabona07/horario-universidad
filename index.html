@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" />
-  <link rel="stylesheet" href="style.css?v=47" />
+  <link rel="stylesheet" href="style.css?v=48" />
 </head>
 <body>
   <header>
@@ -63,7 +63,6 @@
       <h2>¿Qué quieres agregar?</h2>
       <button type="button" id="btn-agregar-clase" class="menu-opcion"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v14H5.5A1.5 1.5 0 0 0 4 19.5z"/><path d="M4 19.5A1.5 1.5 0 0 0 5.5 21H19v-3"/></svg><span>Una clase<small>Materia, días y horas</small></span></button>
       <button type="button" id="btn-agregar-actividad" class="menu-opcion"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/></svg><span>Una actividad<small>Parcial, taller o tarea con fecha</small></span></button>
-      <button type="button" id="btn-agregar-importar" class="menu-opcion"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9 15l3 3 3-3"/></svg><span>Importar mi horario<small>Desde el PDF de tu universidad</small></span></button>
     </div>
   </div>
 
@@ -141,44 +140,6 @@
       </div>
     </div>
   </div>
-
-  <!-- Importar el horario desde el PDF (o captura) de la universidad -->
-  <div id="modal-importar" class="modal-overlay" hidden>
-    <div class="modal-colores modal-importar">
-      <button type="button" id="btn-cerrar-importar" class="btn-cerrar-modal" title="Cerrar">×</button>
-
-      <div id="importar-inicio" class="importar-paso">
-        <div class="modal-notif-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6M9 15l3 3 3-3"/></svg></div>
-        <h2>Importa tu horario</h2>
-        <p class="modal-colores-subtexto">Descarga tu horario en PDF desde la página de tu universidad y súbelo aquí. También sirve una captura de pantalla.</p>
-        <p id="importar-error" class="importar-error" hidden></p>
-        <button type="button" id="btn-elegir-horario" class="btn-notif-activar">Elegir PDF o foto</button>
-      </div>
-
-      <div id="importar-cargando" class="importar-paso" hidden>
-        <div class="importar-spinner" aria-hidden="true"></div>
-        <h2 id="importar-cargando-titulo">Leyendo tu horario…</h2>
-        <p id="importar-cargando-detalle" class="modal-colores-subtexto">Puede tardar hasta un minuto. No cierres la app.</p>
-      </div>
-
-      <div id="importar-revision" class="importar-paso" hidden>
-        <h2>Revisa tus clases</h2>
-        <p id="importar-resumen" class="modal-colores-subtexto"></p>
-        <p id="importar-aviso" class="importar-aviso" hidden></p>
-        <ul id="lista-importar" class="lista-importar"></ul>
-        <label id="importar-reemplazar-caja" class="importar-reemplazar" hidden>
-          <input type="checkbox" id="importar-reemplazar" />
-          <span>Reemplazar mi horario actual <small>Borra tus clases de ahora (por ejemplo, las del semestre pasado) y deja solo estas. Tus actividades no se tocan.</small></span>
-        </label>
-        <div class="notif-botones">
-          <button type="button" id="btn-agregar-importadas" class="btn-notif-activar">Agregar clases</button>
-          <button type="button" id="btn-leer-con-ia" class="btn-notif-luego" hidden>¿No salió bien? Leer con IA</button>
-          <button type="button" id="btn-otro-horario" class="btn-notif-luego">Probar con otro archivo</button>
-        </div>
-      </div>
-    </div>
-  </div>
-  <input type="file" id="input-horario" accept="application/pdf,image/*" hidden />
 
   <div id="modal-foto-preview" class="modal-overlay" hidden>
     <div class="modal-colores modal-foto-preview">
@@ -378,7 +339,6 @@
     <section class="panel-horario">
       <div class="barra-horario">
         <p id="rango-semana" class="rango-semana"></p>
-        <button type="button" id="btn-abrir-importar" class="btn-abrir-pdf btn-abrir-importar" title="Importar tu horario desde el PDF de la universidad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20V9M7.5 13.5 12 9l4.5 4.5M5 4h14"/></svg>Importar</button>
         <button type="button" id="btn-abrir-pdf" class="btn-abrir-pdf" title="Descargar tu horario en PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14"/></svg>PDF</button>
       </div>
 
@@ -402,7 +362,7 @@
     <div id="vista-amigos" hidden>
       <section class="panel-formulario panel-amigos-codigo">
         <h2>Invita a tus amigos</h2>
-        <p class="modal-colores-subtexto">Mándales tu enlace: apenas lo toquen, quedan como amigos</p>
+        <p class="modal-colores-subtexto">Mándale tu enlace a un amigo: apenas lo toque, quedan como amigos. Cada enlace sirve para una sola persona; al compartirlo te sale uno nuevo para el siguiente.</p>
         <div class="enlace-caja">
           <span id="mi-enlace" class="mi-enlace">Cargando tu enlace…</span>
         </div>
@@ -509,6 +469,6 @@
     </div>
   </main>
 
-  <script type="module" src="script.js?v=47"></script>
+  <script type="module" src="script.js?v=48"></script>
 </body>
 </html>

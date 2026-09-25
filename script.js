@@ -21,6 +21,7 @@ import {
   getDocs,
   arrayUnion,
   arrayRemove,
+  writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getMessaging,
@@ -881,9 +882,11 @@ PESTANAS.forEach((pestana) => {
 });
 
 // ---------- Enlace de invitación ----------
-// Cada usuario tiene un enlace ?amigo=<token>. Quien lo toca queda como su
-// amigo al instante (las reglas de Firestore comprueban que el token sea
-// de verdad de esa persona). El token es largo y aleatorio: no se adivina.
+// Enlaces ?amigo=<token>. Quien lo toca queda como amigo al instante (las
+// reglas de Firestore comprueban que el token sea de verdad de esa persona).
+// El token es largo y aleatorio: no se adivina. Cada enlace sirve UNA vez:
+// al usarlo se anota quién lo usó, y si alguien lo reenvía ya no funciona.
+// Por eso, cada vez que se comparte uno, se prepara otro para el siguiente.
 
 function generarToken() {
   const caracteres = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -891,16 +894,34 @@ function generarToken() {
   return [...bytes].map((b) => caracteres[b % caracteres.length]).join("");
 }
 
-async function asegurarEnlacePropio() {
-  const referenciaPropia = doc(db, "horarios", usuarioActual.uid);
-  const snapshotPropio = await getDoc(referenciaPropia);
-  const existente = snapshotPropio.exists() ? snapshotPropio.data().miEnlace : null;
-  if (existente) return existente;
-
+async function crearEnlaceNuevo() {
   const token = generarToken();
-  await setDoc(doc(db, "invitaciones", token), { uid: usuarioActual.uid });
-  await setDoc(referenciaPropia, { miEnlace: token }, { merge: true });
+  await setDoc(doc(db, "invitaciones", token), { uid: usuarioActual.uid, usadaPor: null, creada: Date.now() });
+  await setDoc(doc(db, "horarios", usuarioActual.uid), { miEnlace: token }, { merge: true });
   return token;
+}
+
+// El enlace listo para mandar: el guardado, si nadie lo ha usado todavía.
+async function asegurarEnlacePropio() {
+  const snapshotPropio = await getDoc(doc(db, "horarios", usuarioActual.uid));
+  const existente = snapshotPropio.exists() ? snapshotPropio.data().miEnlace : null;
+  if (existente) {
+    const invitacion = await getDoc(doc(db, "invitaciones", existente));
+    if (invitacion.exists() && !invitacion.data().usadaPor) return existente;
+  }
+  return crearEnlaceNuevo();
+}
+
+// Después de mandar un enlace se prepara otro para el próximo amigo.
+async function cambiarEnlace() {
+  try {
+    miEnlace = enlaceDeInvitacion(await crearEnlaceNuevo());
+    miEnlaceEl.textContent = miEnlace;
+  } catch (error) {
+    console.error(error);
+    miEnlace = "";
+    miEnlaceEl.textContent = "No se pudo crear tu enlace. Recarga la app.";
+  }
 }
 
 function enlaceDeInvitacion(token) {
@@ -982,13 +1003,22 @@ async function procesarInvitacionPendiente() {
     if (solicitudDeEl) {
       await updateDoc(solicitudDeEl.ref, { estado: "aceptada" });
     } else {
-      await addDoc(collection(db, "solicitudesAmistad"), {
+      if (invitacion.data().usadaPor) {
+        olvidarInvitacion();
+        alert(`Este enlace ya se usó. Cada enlace sirve para una sola persona: pídele a ${apodo} uno nuevo.`);
+        return;
+      }
+      // La amistad y la marca de "enlace usado" van juntas: o pasan las dos o ninguna.
+      const lote = writeBatch(db);
+      lote.set(doc(collection(db, "solicitudesAmistad")), {
         de: miUid,
         para: uidAmigo,
         estado: "aceptada",
         invitacion: token,
         creada: Date.now(),
       });
+      lote.update(doc(db, "invitaciones", token), { usadaPor: miUid });
+      await lote.commit();
     }
 
     olvidarInvitacion();
@@ -1118,11 +1148,14 @@ function mostrarSubpestana(bloqueados) {
 subpestanaAmigos.addEventListener("click", () => mostrarSubpestana(false));
 subpestanaBloqueados.addEventListener("click", () => mostrarSubpestana(true));
 
+// El enlace ya está creado antes de tocar el botón: el iPhone solo deja
+// copiar o compartir si se hace enseguida del toque, sin esperar a internet.
 async function copiarEnlace() {
   try {
     await navigator.clipboard.writeText(miEnlace);
     btnCopiarEnlace.textContent = "¡Copiado!";
     setTimeout(() => (btnCopiarEnlace.textContent = "Copiar"), 1500);
+    cambiarEnlace();
   } catch {
     alert("No se pudo copiar. Mantén presionado el enlace para copiarlo.");
   }
@@ -1144,6 +1177,7 @@ btnCompartirEnlace.addEventListener("click", async () => {
       text: "¡Agrégame en ParchApp! 🗓️ Toca el enlace y quedamos como amigos al instante:",
       url: miEnlace,
     });
+    cambiarEnlace();
   } catch {
     // Canceló el menú de compartir: no pasa nada.
   }
@@ -1889,241 +1923,6 @@ async function renderCuentas() {
 // Servidor de avisos instantáneos (carpeta horario-avisos, en Cloudflare).
 // Si falla, el script de GitHub manda el aviso en su siguiente revisión.
 const URL_AVISOS = "https://horario-avisos.horario-avisos.workers.dev";
-
-// ---------- Importar el horario desde el PDF de la universidad ----------
-// Todo gratis:
-// 1. Primero se lee en el celular (importar-local.js): PDF.js para los PDF
-//    y OCR (Tesseract) para las capturas.
-// 2. Si ahí no sale nada, o la persona toca "Leer con IA", se manda una
-//    imagen del horario al servidor de avisos, que usa la IA gratis de
-//    Cloudflare (tiene un cupo diario; si se acaba, no cobra, solo falla).
-// La app muestra lo que encontró para revisarlo y solo agrega lo marcado.
-
-const modalImportar = document.getElementById("modal-importar");
-const inputHorario = document.getElementById("input-horario");
-const importarError = document.getElementById("importar-error");
-const importarResumen = document.getElementById("importar-resumen");
-const importarAviso = document.getElementById("importar-aviso");
-const listaImportar = document.getElementById("lista-importar");
-const btnAgregarImportadas = document.getElementById("btn-agregar-importadas");
-const importarReemplazarCaja = document.getElementById("importar-reemplazar-caja");
-const importarReemplazar = document.getElementById("importar-reemplazar");
-const btnLeerConIA = document.getElementById("btn-leer-con-ia");
-const importarCargandoTitulo = document.getElementById("importar-cargando-titulo");
-const importarCargandoDetalle = document.getElementById("importar-cargando-detalle");
-const MAX_MB_IMPORTAR = 15;
-const DIAS_CORTOS = { Lunes: "Lun", Martes: "Mar", Miércoles: "Mié", Jueves: "Jue", Viernes: "Vie", Sábado: "Sáb", Domingo: "Dom" };
-let clasesImportadas = [];
-let imagenParaIA = null; // función que saca la imagen del horario (solo si hace falta la IA)
-
-function mostrarPasoImportar(paso) {
-  ["inicio", "cargando", "revision"].forEach((nombre) => {
-    document.getElementById(`importar-${nombre}`).hidden = nombre !== paso;
-  });
-}
-
-function abrirImportar(error = "") {
-  importarError.textContent = error;
-  importarError.hidden = !error;
-  mostrarPasoImportar("inicio");
-  modalImportar.hidden = false;
-}
-
-function cerrarImportar() {
-  if (!document.getElementById("importar-cargando").hidden) return; // no cortar a mitad de la lectura
-  modalImportar.hidden = true;
-  clasesImportadas = [];
-}
-
-document.getElementById("btn-abrir-importar").addEventListener("click", () => abrirImportar());
-document.getElementById("btn-cerrar-importar").addEventListener("click", cerrarImportar);
-modalImportar.addEventListener("click", (evento) => {
-  if (evento.target === modalImportar) cerrarImportar();
-});
-document.getElementById("btn-otro-horario").addEventListener("click", () => abrirImportar());
-document.getElementById("btn-elegir-horario").addEventListener("click", () => {
-  inputHorario.value = "";
-  inputHorario.click();
-});
-
-function mostrarCargandoImportar(titulo, detalle) {
-  importarCargandoTitulo.textContent = titulo;
-  importarCargandoDetalle.textContent = detalle;
-  mostrarPasoImportar("cargando");
-}
-
-// Paso 2 (respaldo): la IA gratis de Cloudflare lee la imagen del horario.
-async function leerConIA() {
-  if (!imagenParaIA) return;
-  mostrarCargandoImportar("Leyendo con IA…", "Puede tardar hasta un minuto. No cierres la app.");
-  try {
-    const datos = await imagenParaIA();
-    const token = await usuarioActual.getIdToken();
-    const respuesta = await fetch(`${URL_AVISOS}/importar-horario`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "text/plain", "X-Tipo-Archivo": "image/jpeg" },
-      body: datos,
-    });
-    const resultado = await respuesta.json().catch(() => ({}));
-    if (!respuesta.ok) {
-      abrirImportar(resultado.error || "No se pudo leer el horario. Intenta de nuevo.");
-      return;
-    }
-    if (!resultado.clases?.length) {
-      abrirImportar(resultado.aviso || "No encontramos clases. Prueba con otro PDF o una captura más clara.");
-      return;
-    }
-    clasesImportadas = resultado.clases;
-    pintarRevisionImportar(resultado.aviso, false);
-  } catch (error) {
-    console.error(error);
-    abrirImportar("No se pudo conectar. Revisa tu internet e intenta de nuevo.");
-  }
-}
-
-btnLeerConIA.addEventListener("click", leerConIA);
-
-inputHorario.addEventListener("change", async () => {
-  const archivo = inputHorario.files[0];
-  if (!archivo) return;
-  if (archivo.type !== "application/pdf" && !archivo.type.startsWith("image/")) {
-    abrirImportar("Ese archivo no es un PDF ni una imagen.");
-    return;
-  }
-  if (archivo.size > MAX_MB_IMPORTAR * 1024 * 1024) {
-    abrirImportar(`El archivo pesa más de ${MAX_MB_IMPORTAR} MB. Prueba con una captura del horario.`);
-    return;
-  }
-
-  // Paso 1: leerlo en el celular.
-  const esPdf = archivo.type === "application/pdf";
-  mostrarCargandoImportar(
-    "Leyendo tu horario…",
-    esPdf ? "Un momento…" : "La primera vez descarga el lector de imágenes (~10 MB)."
-  );
-  imagenParaIA = null;
-  try {
-    const { leerHorarioLocal } = await import("./importar-local.js?v=46");
-    const resultado = await leerHorarioLocal(archivo, (porcentaje) => {
-      importarCargandoDetalle.textContent = `Reconociendo el texto… ${porcentaje} %`;
-    });
-    imagenParaIA = resultado.imagenParaIA;
-    if (resultado.clases.length) {
-      clasesImportadas = resultado.clases;
-      pintarRevisionImportar("", true);
-      return;
-    }
-  } catch (error) {
-    console.error("Lector local:", error);
-    if (!imagenParaIA) {
-      abrirImportar("No se pudo abrir ese archivo. Revisa tu internet (la primera vez descarga el lector) e intenta de nuevo.");
-      return;
-    }
-  }
-  // No salió nada en el celular: se intenta con la IA gratis.
-  await leerConIA();
-});
-
-function claseYaExiste(nueva) {
-  const clave = (c) => `${c.materia.trim().toLowerCase()}|${c.horaInicio}|${c.horaFin}|${[...c.dias].sort().join(",")}`;
-  return clases.some((c) => clave(c) === clave(nueva));
-}
-
-function actualizarBotonImportar() {
-  const marcadas = listaImportar.querySelectorAll("input:checked").length;
-  const verbo = importarReemplazar.checked ? "Reemplazar con" : "Agregar";
-  btnAgregarImportadas.textContent = `${verbo} ${marcadas} ${marcadas === 1 ? "clase" : "clases"}`;
-  btnAgregarImportadas.disabled = marcadas === 0;
-}
-
-// Al reemplazar, las "repetidas" también cuentan (el horario viejo se borra).
-importarReemplazar.addEventListener("change", () => {
-  if (importarReemplazar.checked) {
-    listaImportar.querySelectorAll("input").forEach((casilla) => (casilla.checked = true));
-  }
-  actualizarBotonImportar();
-});
-
-// leidoEnCelular: si vino del lector del celular, se ofrece "Leer con IA"
-// por si algo salió mal.
-function pintarRevisionImportar(aviso, leidoEnCelular) {
-  btnLeerConIA.hidden = !leidoEnCelular || !imagenParaIA;
-  listaImportar.innerHTML = "";
-  clasesImportadas.forEach((clase, i) => {
-    const repetida = claseYaExiste(clase);
-    const fila = document.createElement("li");
-    const etiqueta = document.createElement("label");
-    etiqueta.className = "importar-clase";
-
-    const casilla = document.createElement("input");
-    casilla.type = "checkbox";
-    casilla.value = String(i);
-    casilla.checked = !repetida;
-    casilla.addEventListener("change", actualizarBotonImportar);
-
-    const datos = document.createElement("span");
-    datos.className = "importar-clase-datos";
-    const materia = document.createElement("strong");
-    materia.textContent = clase.materia;
-    const cuando = document.createElement("small");
-    cuando.textContent = `${clase.dias.map((d) => DIAS_CORTOS[d] || d).join(", ")} · ${clase.horaInicio}–${clase.horaFin}`;
-    datos.append(materia, cuando);
-    const extra = [clase.aula, clase.profesor].filter(Boolean).join(" · ");
-    if (extra || repetida) {
-      const detalle = document.createElement("small");
-      detalle.textContent = repetida ? "Ya está en tu horario" : extra;
-      datos.appendChild(detalle);
-    }
-
-    etiqueta.append(casilla, datos);
-    fila.appendChild(etiqueta);
-    listaImportar.appendChild(fila);
-  });
-
-  const n = clasesImportadas.length;
-  importarResumen.textContent = `Encontramos ${n} ${n === 1 ? "clase" : "clases"}. Desmarca las que no quieras; después puedes editar cualquiera tocándola.`;
-  importarAviso.textContent = aviso || "";
-  importarAviso.hidden = !aviso;
-  // Solo tiene sentido reemplazar si ya hay un horario.
-  importarReemplazar.checked = false;
-  importarReemplazarCaja.hidden = clases.length === 0;
-  actualizarBotonImportar();
-  mostrarPasoImportar("revision");
-}
-
-btnAgregarImportadas.addEventListener("click", () => {
-  const elegidas = [...listaImportar.querySelectorAll("input:checked")].map((c) => clasesImportadas[Number(c.value)]);
-  if (!elegidas.length) return;
-  const reemplazar = importarReemplazar.checked && clases.length > 0;
-  if (reemplazar && !confirm(`¿Borrar tus ${clases.length} clases actuales y dejar solo las ${elegidas.length} importadas?`)) {
-    return;
-  }
-  if (reemplazar) {
-    cancelarEdicion();
-    clases.length = 0; // mismo arreglo: el resto de la app lo sigue usando
-  }
-  const base = Date.now();
-  elegidas.forEach((clase, i) => {
-    clases.push({
-      id: String(base + i),
-      materia: clase.materia,
-      dias: clase.dias,
-      horaInicio: clase.horaInicio,
-      horaFin: clase.horaFin,
-      aula: clase.aula || "",
-      profesor: clase.profesor || "",
-    });
-  });
-  guardarDatos();
-  render();
-  modalImportar.hidden = true;
-  clasesImportadas = [];
-  alert(
-    reemplazar
-      ? `¡Listo! Tu horario ahora tiene ${elegidas.length} ${elegidas.length === 1 ? "clase" : "clases"}.`
-      : `¡Listo! Agregamos ${elegidas.length} ${elegidas.length === 1 ? "clase" : "clases"} a tu horario.`
-  );
-});
 
 // ruta: "avisar-cuenta" ({ idCuenta }) o "avisar-pago" ({ amigo }).
 async function avisarAlInstante(ruta, datos) {
@@ -3155,7 +2954,7 @@ function pintarAgendaMovil(
       item.style.background = colorParaMateria(clase.materia, listaClases);
       item.innerHTML = `
         <strong>${escaparHtml(clase.materia)}</strong>
-        <span>${clase.horaInicio} - ${clase.horaFin}</span>
+        <span>${escaparHtml(clase.horaInicio)} - ${escaparHtml(clase.horaFin)}</span>
         ${clase.aula ? `<span>${escaparHtml(clase.aula)}</span>` : ""}
         ${clase.profesor ? `<span>${escaparHtml(clase.profesor)}</span>` : ""}
       `;
@@ -3579,10 +3378,6 @@ document.getElementById("btn-agregar-clase").addEventListener("click", () => {
   abrirHojaFormulario("clase");
 });
 document.getElementById("btn-agregar-actividad").addEventListener("click", () => abrirHojaFormulario("actividad"));
-document.getElementById("btn-agregar-importar").addEventListener("click", () => {
-  modalAgregar.hidden = true;
-  abrirImportar();
-});
 modalAgregar.addEventListener("click", (evento) => {
   if (evento.target === modalAgregar) modalAgregar.hidden = true;
 });
