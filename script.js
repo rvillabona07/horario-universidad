@@ -22,6 +22,7 @@ import {
   arrayUnion,
   arrayRemove,
   writeBatch,
+  serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getMessaging,
@@ -823,6 +824,7 @@ onAuthStateChanged(auth, async (user) => {
     usuarioInfo.hidden = false;
     const miPerfil = await obtenerPerfil(user.uid);
     usuarioEmailEl.textContent = miPerfil.apodo || "Sin apodo";
+    apodoCambiado = miPerfil.apodoCambiado?.toMillis?.() || 0;
     miAvatar = miPerfil.avatar || null;
     actualizarAvatarUsuario();
     formAuth.reset();
@@ -1003,9 +1005,11 @@ async function procesarInvitacionPendiente() {
     if (solicitudDeEl) {
       await updateDoc(solicitudDeEl.ref, { estado: "aceptada" });
     } else {
+      // Enlace ya usado por otra persona: el mismo error que un enlace
+      // inventado, sin mostrar de quién es.
       if (invitacion.data().usadaPor) {
         olvidarInvitacion();
-        alert(`Este enlace ya se usó. Cada enlace sirve para una sola persona: pídele a ${apodo} uno nuevo.`);
+        alert("Ese enlace de invitación no es válido.");
         return;
       }
       // La amistad y la marca de "enlace usado" van juntas: o pasan las dos o ninguna.
@@ -1031,7 +1035,7 @@ async function procesarInvitacionPendiente() {
   }
 }
 
-// perfiles/{uid}: { apodo, avatar }
+// perfiles/{uid}: { apodo, apodoCambiado, avatar }
 async function obtenerPerfil(uid) {
   try {
     const snapshot = await getDoc(doc(db, "perfiles", uid));
@@ -1055,7 +1059,26 @@ const apodoInput = document.getElementById("apodo-input");
 const modalApodo = document.getElementById("modal-apodo");
 const btnCerrarApodo = document.getElementById("btn-cerrar-apodo");
 
+// El apodo queda fijo un mes cada vez que se pone o se cambia, para que
+// nadie se haga pasar por otro cambiándose el nombre a cada rato. Quien ya
+// tenía apodo de antes (sin fecha) puede cambiarlo una vez más. Las reglas
+// de Firestore también lo exigen.
+const DIAS_APODO_FIJO = 30;
+let apodoCambiado = 0; // cuándo se cambió por última vez (ms), 0 = nunca
+
+function fechaApodoLibre(desde) {
+  return new Date(desde + DIAS_APODO_FIJO * 24 * 60 * 60 * 1000);
+}
+
+function textoFecha(fecha) {
+  return fecha.toLocaleDateString("es-CO", { day: "numeric", month: "long" });
+}
+
 usuarioEmailEl.addEventListener("click", () => {
+  if (apodoCambiado && Date.now() < fechaApodoLibre(apodoCambiado).getTime()) {
+    alert(`Tu apodo no se puede cambiar durante un mes. Podrás cambiarlo desde el ${textoFecha(fechaApodoLibre(apodoCambiado))}.`);
+    return;
+  }
   apodoInput.value = usuarioEmailEl.textContent === "Sin apodo" ? "" : usuarioEmailEl.textContent;
   modalApodo.hidden = false;
 });
@@ -1072,9 +1095,31 @@ formApodo.addEventListener("submit", async (evento) => {
   evento.preventDefault();
   const apodo = apodoInput.value.trim();
   if (!apodo) return;
+  if (apodo === usuarioEmailEl.textContent) {
+    modalApodo.hidden = true;
+    return;
+  }
+  if (
+    !confirm(
+      `Tu apodo será "${apodo}" y no lo podrás cambiar durante un mes (hasta el ${textoFecha(fechaApodoLibre(Date.now()))}).\n\n¿Guardarlo?`
+    )
+  ) {
+    return;
+  }
 
-  // merge: para no borrar el avatar al cambiar el apodo.
-  await setDoc(doc(db, "perfiles", usuarioActual.uid), { apodo }, { merge: true });
+  try {
+    // merge: para no borrar el avatar al cambiar el apodo.
+    await setDoc(doc(db, "perfiles", usuarioActual.uid), { apodo, apodoCambiado: serverTimestamp() }, { merge: true });
+  } catch (error) {
+    console.error(error);
+    alert(
+      error.code === "permission-denied"
+        ? "Tu apodo no se puede cambiar todavía: cambió hace menos de un mes."
+        : "No se pudo guardar tu apodo. Revisa tu internet e intenta de nuevo."
+    );
+    return;
+  }
+  apodoCambiado = Date.now();
   usuarioEmailEl.textContent = apodo;
   actualizarAvatarUsuario();
   modalApodo.hidden = true;
