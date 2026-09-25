@@ -705,7 +705,9 @@ async function cargarDatosDesdeFirestore(uid) {
 async function guardarDatos() {
   if (!usuarioActual) return;
   publicarHorarioCompartido();
-  await setDoc(doc(db, "horarios", usuarioActual.uid), { clases, pendientes }, { merge: true });
+  // "cambiado": check-clases.js actualiza el estado ("En clase"/"Libre")
+  // de quien acaba de cambiar su horario.
+  await setDoc(doc(db, "horarios", usuarioActual.uid), { clases, pendientes, cambiado: Date.now() }, { merge: true });
 }
 
 // Copia de solo las clases que pueden leer los amigos que elegiste
